@@ -99,13 +99,13 @@ func (t *ExecuteTask) ExecTask(ctx context.Context, task *db.Task) error {
 			Task: task,
 		},
 	})
-	t.logger.InfoF("Task <%d> executing.", task.Id)
+	t.logger.InfoF("Task <%d> executing.", task.Name)
 	return nil
 }
 
 func (t *ExecuteTask) ExitTask(ctx context.Context, task *db.Task) error {
 	t.bestTypeManager.StopOneAsync(task.Name)
-	t.logger.InfoF("Task <%d> stopping.", task.Id)
+	t.logger.InfoF("Task <%d> stopping.", task.Name)
 	return nil
 }
 
