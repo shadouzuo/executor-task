@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - 'main'
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Deploy
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: 'http://xxx/api/v1/ci-start'
+          method: 'POST'
+          customHeaders: '{"Content-Type": "application/json"}'
+          data: >-
+            {
+              "env": "prod",
+              "project_name": "shadouzuo-executor-task",
+              "src_path": "~/src/shadouzuo/executor-task",
+              "token": "${{ secrets.TOKEN }}",
+              "port": 0,
+              "config_path": "~/data/shadouzuo/executor-task-prod",
+              "alert_tg_token": "",
+              "alert_tg_group_id": "",
+              "loki_url": ""
+            }
+
