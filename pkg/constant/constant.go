@@ -22,3 +22,9 @@ const (
 	ActionType_Start go_best_type.ActionType = "start"
 	ActionType_Stop  go_best_type.ActionType = "stop"
 )
+
+type UTXO struct {
+	TxId  string  `json:"tx_id"`
+	Index uint64  `json:"index"`
+	Value float64 `json:"value"`
+}

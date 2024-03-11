@@ -9,6 +9,10 @@ import (
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/pkg/errors"
 	any "github.com/shadouzuo/executor-task/pkg/any"
+	distribute_btc "github.com/shadouzuo/executor-task/pkg/any/distribute-btc"
+	gather_btc "github.com/shadouzuo/executor-task/pkg/any/gather-btc"
+	update_btc_confirm "github.com/shadouzuo/executor-task/pkg/any/update-btc-confirm"
+	update_btc_utxo "github.com/shadouzuo/executor-task/pkg/any/update-btc-utxo"
 	constant "github.com/shadouzuo/executor-task/pkg/constant"
 	"github.com/shadouzuo/executor-task/pkg/db"
 )
@@ -21,7 +25,7 @@ type ExecuteTask struct {
 func NewExecuteTask() *ExecuteTask {
 	w := &ExecuteTask{}
 	w.logger = go_logger.Logger.CloneWithPrefix(w.Name())
-	w.bestTypeManager = go_best_type.NewBestTypeManager()
+	w.bestTypeManager = go_best_type.NewBestTypeManager(w.logger)
 	return w
 }
 
@@ -30,7 +34,7 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 }
 
 func (t *ExecuteTask) Run(ctx context.Context) error {
-	tasks := make([]db.Task, 0)
+	tasks := make([]*db.Task, 0)
 
 	err := go_mysql.MysqlInstance.Select(
 		&tasks,
@@ -49,13 +53,13 @@ func (t *ExecuteTask) Run(ctx context.Context) error {
 		return err
 	}
 
-	if len(tasks) == 0 {
-		t.logger.InfoF("Nothing.")
-		return nil
-	}
+	// if len(tasks) == 0 {
+	// 	t.logger.InfoF("Nothing.")
+	// 	return nil
+	// }
 
 	for _, task := range tasks {
-		_, rowsAffected, err := go_mysql.MysqlInstance.Update(
+		_, err := go_mysql.MysqlInstance.Update(
 			&go_mysql.UpdateParams{
 				TableName: "task",
 				Update: map[string]interface{}{
@@ -69,49 +73,103 @@ func (t *ExecuteTask) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if rowsAffected == 0 {
-			return errors.New("Update error.")
+		err = t.execTask(task)
+		if err != nil {
+			t.logger.Error(err)
+			_, err := go_mysql.MysqlInstance.Update(
+				&go_mysql.UpdateParams{
+					TableName: "task",
+					Update: map[string]interface{}{
+						"status": constant.TaskStatusType_ExitedWithErr,
+						"mark":   err.Error(),
+					},
+					Where: map[string]interface{}{
+						"id": task.Id,
+					},
+				},
+			)
+			if err != nil {
+				return err
+			}
 		}
-
-		switch task.Status {
-		case constant.TaskStatusType_WaitExec:
-			t.ExecTask(ctx, &task)
-		case constant.TaskStatusType_WaitExit:
-			t.ExitTask(ctx, &task)
-		}
-
 	}
 
 	return nil
 }
 
-func (t *ExecuteTask) ExecTask(ctx context.Context, task *db.Task) error {
-	testInstance := t.bestTypeManager.Get(task.Name)
-	if testInstance == nil {
-		testInstance = any.NewTestType(t.bestTypeManager)
-		t.bestTypeManager.Set(task.Name, testInstance)
+func (t *ExecuteTask) execTask(task *db.Task) error {
+	switch task.Status {
+	case constant.TaskStatusType_WaitExec:
+		var bestType go_best_type.IBestType
+
+		switch task.Name {
+		case "test":
+			bestType = any.NewTestType(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: any.ActionTypeData{
+					Task: task,
+				},
+			})
+		case "gene_btc_address":
+			bestType = any.NewGeneBtcAddressType(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: any.ActionTypeData{
+					Task: task,
+				},
+			})
+		case "distribute_btc":
+			bestType = distribute_btc.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: distribute_btc.ActionTypeData{
+					Task: task,
+				},
+			})
+		case "update_btc_utxo":
+			bestType = update_btc_utxo.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: update_btc_utxo.ActionTypeData{
+					Task: task,
+				},
+			})
+		case "update_btc_confirm":
+			bestType = update_btc_confirm.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: update_btc_confirm.ActionTypeData{
+					Task: task,
+				},
+			})
+		case "gather_btc":
+			bestType = gather_btc.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: gather_btc.ActionTypeData{
+					Task: task,
+				},
+			})
+		default:
+			return errors.New("Task not be supported.")
+		}
+		t.logger.InfoF("Task <%s> executing.", task.Name)
+	case constant.TaskStatusType_WaitExit:
+		t.logger.InfoF("Task <%s> exiting.", task.Name)
+		t.bestTypeManager.ExitOne(task.Name, go_best_type.ExitType_User)
 	}
-
-	t.logger.InfoF("to start")
-	testInstance.Ask(&go_best_type.AskType{
-		Action: constant.ActionType_Start,
-		Data: any.ActionType_Test_Data{
-			Task: task,
-		},
-	})
-	t.logger.InfoF("Task <%d> executing.", task.Name)
-	return nil
-}
-
-func (t *ExecuteTask) ExitTask(ctx context.Context, task *db.Task) error {
-	t.bestTypeManager.StopOneAsync(task.Name)
-	t.logger.InfoF("Task <%d> stopping.", task.Name)
 	return nil
 }
 
 func (t *ExecuteTask) Stop() error {
-	t.bestTypeManager.TerminalAllAsync()
-	t.bestTypeManager.Wait()
+	t.bestTypeManager.ExitAll(go_best_type.ExitType_System)
 	return nil
 }
 

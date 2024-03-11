@@ -7,6 +7,7 @@ type Config struct {
 		User string `json:"user"`
 		Pass string `json:"pass"`
 	} `json:"db"`
+	Pass string `json:"pass"`
 }
 
 var GlobalConfig Config

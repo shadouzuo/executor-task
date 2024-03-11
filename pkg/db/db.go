@@ -25,3 +25,31 @@ type Task struct {
 
 	DbTime
 }
+
+type BtcAddress struct {
+	IdType
+	Address string  `json:"address"`
+	Index   uint64  `json:"index"`
+	Utxos   *string `json:"utxos,omitempty"`
+
+	DbTime
+}
+
+type BtcTx struct {
+	IdType
+	TaskId  uint64 `json:"task_id"`
+	TxId    string `json:"tx_id"`
+	TxHex   string `json:"tx_hex"`
+	Confirm uint64 `json:"confirm"`
+	DbTime
+}
+
+type BtcUtxo struct {
+	IdType
+	Address string  `json:"address"`
+	TxId    string  `json:"tx_id"`
+	Index   uint64  `json:"index"`
+	Value   float64 `json:"value"`
+	Status  uint64  `json:"status"`
+	DbTime
+}
