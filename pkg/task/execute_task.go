@@ -9,6 +9,7 @@ import (
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/pkg/errors"
 	any "github.com/shadouzuo/executor-task/pkg/any"
+	build_btc_tx "github.com/shadouzuo/executor-task/pkg/any/build-btc-tx"
 	distribute_btc "github.com/shadouzuo/executor-task/pkg/any/distribute-btc"
 	gather_btc "github.com/shadouzuo/executor-task/pkg/any/gather-btc"
 	update_btc_confirm "github.com/shadouzuo/executor-task/pkg/any/update-btc-confirm"
@@ -154,6 +155,15 @@ func (t *ExecuteTask) execTask(task *db.Task) error {
 			bestType.Ask(&go_best_type.AskType{
 				Action: constant.ActionType_Start,
 				Data: gather_btc.ActionTypeData{
+					Task: task,
+				},
+			})
+		case "build_btc_tx":
+			bestType = build_btc_tx.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: build_btc_tx.ActionTypeData{
 					Task: task,
 				},
 			})

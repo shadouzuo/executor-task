@@ -138,6 +138,8 @@ github.com/pefish/go-coin-btc v0.4.2 h1:ETGdRCxDrGgAKO6nbki+GLC7j+hBnObdt2Wb/8JS
 github.com/pefish/go-coin-btc v0.4.2/go.mod h1:pKNmyXkpZmHLP0LFw/DkNtwKoa/AshSV3Q1GLxWA7Pk=
 github.com/pefish/go-coin-btc v0.4.3 h1:Qo2LfZpu6skjfSWtj5dSqWyTbOMFC5Wgx7xQOtQLWN0=
 github.com/pefish/go-coin-btc v0.4.3/go.mod h1:pKNmyXkpZmHLP0LFw/DkNtwKoa/AshSV3Q1GLxWA7Pk=
+github.com/pefish/go-coin-btc v0.4.4 h1:WgsqIKFaBkh9ttK+Wbj3pzPPfND9Q8uBRTfGoqZ4wWc=
+github.com/pefish/go-coin-btc v0.4.4/go.mod h1:pKNmyXkpZmHLP0LFw/DkNtwKoa/AshSV3Q1GLxWA7Pk=
 github.com/pefish/go-commander v0.6.2 h1:m8wVRcEinENGkdLgYR26F8f3ZJJ8GWQcKLv/KlbjhFw=
 github.com/pefish/go-commander v0.6.2/go.mod h1:ojUHP/D5gluvNmRcmrKuZcs+WvbYZmaJpbvbxzf/Umo=
 github.com/pefish/go-config v0.4.0 h1:kxQ8vU5iLUzd09ALZjViqWhkqBCjTHOU6FR/l6t3lBo=
