@@ -1,45 +1,46 @@
-package build_btc_tx
+package print_wifs
 
 import (
-	"errors"
+	"fmt"
+	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/btcsuite/btcd/chaincfg"
 
 	go_best_type "github.com/pefish/go-best-type"
 	go_coin_btc "github.com/pefish/go-coin-btc"
+	go_crypto "github.com/pefish/go-crypto"
 	go_format "github.com/pefish/go-format"
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
+	"github.com/shadouzuo/executor-task/pkg/global"
 )
 
-type BuildBtcTxType struct {
+type PrintWifsType struct {
 	go_best_type.BaseBestType
 	config    *Config
 	btcWallet *go_coin_btc.Wallet
 }
 
 type Config struct {
-	BtcNodeUrl     string             `json:"btc_node_url"`
-	UTXOs          []go_coin_btc.UTXO `json:"utxos"`
-	Wif            string             `json:"wif"`
-	ChangeAddress  string             `json:"change_address"`
-	TargetAddress  string             `json:"target_address"`
-	TargetValueBtc float64            `json:"target_value_btc"`
-	FeeRate        float64            `json:"fee_rate"`
+	Mnemonic         string   `json:"mnemonic"`
+	Pass             string   `json:"pass"`
+	SelectAddressSql []string `json:"select_address_sql"`
 }
 
 type ActionTypeData struct {
 	Task *constant.Task
 }
 
-func New(name string) *BuildBtcTxType {
-	t := &BuildBtcTxType{}
+func New(name string) *PrintWifsType {
+	t := &PrintWifsType{}
 	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
 	return t
 }
 
-func (p *BuildBtcTxType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+func (p *PrintWifsType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	task := ask.Data.(ActionTypeData).Task
 	err := p.init(task)
 	if err != nil {
@@ -101,11 +102,11 @@ func (p *BuildBtcTxType) Start(exitChan <-chan go_best_type.ExitType, ask *go_be
 	}
 }
 
-func (p *BuildBtcTxType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+func (p *PrintWifsType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	return nil
 }
 
-func (p *BuildBtcTxType) init(task *constant.Task) error {
+func (p *PrintWifsType) init(task *constant.Task) error {
 	var config Config
 	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
 	if err != nil {
@@ -114,46 +115,39 @@ func (p *BuildBtcTxType) init(task *constant.Task) error {
 	p.config = &config
 
 	p.btcWallet = go_coin_btc.NewWallet(&chaincfg.MainNetParams)
-	p.btcWallet.InitRpcClient(&go_coin_btc.RpcServerConfig{
-		Url: config.BtcNodeUrl,
-	})
 	return nil
 }
 
-func (p *BuildBtcTxType) do(task *constant.Task) error {
+func (p *PrintWifsType) do(task *constant.Task) error {
 
-	keyInfo, err := p.btcWallet.KeyInfoFromWif(p.config.Wif)
-	if err != nil {
-		return err
-	}
-
-	utxoWithPrivs := make([]*go_coin_btc.UTXOWithPriv, 0)
-	for _, utxo := range p.config.UTXOs {
-		utxoWithPrivs = append(utxoWithPrivs, &go_coin_btc.UTXOWithPriv{
-			Utxo: utxo,
-			Priv: keyInfo.PrivKey,
-		})
-	}
-	msgTx, _, _, err := p.btcWallet.BuildTx(
-		utxoWithPrivs,
-		p.config.ChangeAddress,
-		p.config.TargetAddress,
-		p.config.TargetValueBtc,
-		p.config.FeeRate,
+	addresses := make([]*constant.BtcAddress, 0)
+	err := go_mysql.MysqlInstance.RawSelect(
+		&addresses,
+		p.config.SelectAddressSql[0],
+		p.config.SelectAddressSql[1],
 	)
 	if err != nil {
 		return err
 	}
-	txHex, err := p.btcWallet.MsgTxToHex(msgTx)
+	seedPass, err := go_crypto.CryptoInstance.AesCbcDecrypt(global.GlobalConfig.Pass, p.config.Pass)
 	if err != nil {
 		return err
+	}
+	seedHex := p.btcWallet.SeedHexByMnemonic(p.config.Mnemonic, seedPass)
+	wifs := make([]string, 0)
+	for _, addrDb := range addresses {
+		keyInfo, err := p.btcWallet.DeriveBySeedPath(seedHex, fmt.Sprintf("m/86'/0'/0'/0/%d", addrDb.Index))
+		if err != nil {
+			return err
+		}
+		wifs = append(wifs, keyInfo.Wif)
 	}
 
 	_, err = go_mysql.MysqlInstance.Update(
 		&go_mysql.UpdateParams{
 			TableName: "task",
 			Update: map[string]interface{}{
-				"mark": txHex,
+				"mark": strings.Join(wifs, "\n"),
 			},
 			Where: map[string]interface{}{
 				"id": task.Id,

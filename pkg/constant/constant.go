@@ -1,6 +1,8 @@
 package constant
 
-import go_best_type "github.com/pefish/go-best-type"
+import (
+	go_best_type "github.com/pefish/go-best-type"
+)
 
 type TaskStatusType uint64
 
@@ -27,4 +29,11 @@ type UTXO struct {
 	TxId  string  `json:"tx_id"`
 	Index uint64  `json:"index"`
 	Value float64 `json:"value"`
+}
+
+type TaskResult struct {
+	BestType go_best_type.IBestType
+	Task     *Task
+	Err      error
+	Data     string
 }

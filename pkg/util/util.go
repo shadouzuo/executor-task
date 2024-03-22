@@ -6,18 +6,79 @@ import (
 	"strings"
 	"time"
 
+	"github.com/btcsuite/btcd/wire"
+	go_coin_btc "github.com/pefish/go-coin-btc"
 	go_logger "github.com/pefish/go-logger"
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
-	"github.com/shadouzuo/executor-task/pkg/db"
 )
+
+func SendBtc(
+	logger go_logger.InterfaceLogger,
+	btcWallet *go_coin_btc.Wallet,
+	priv string,
+	fromAddress string,
+	toAddr string,
+	amount float64,
+) (
+	txId string,
+	msgTx *wire.MsgTx,
+	spentUtxos []constant.UTXO,
+	newUtxos []*go_coin_btc.UTXO,
+	err error,
+) {
+	feeRate, err := btcWallet.RpcClient.EstimateSmartFee()
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	spentUtxos, err = SelectUtxos(fromAddress, amount, 0.001)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	outPointWithPrivs := make([]*go_coin_btc.UTXOWithPriv, 0)
+	for _, btcUtxo := range spentUtxos {
+		outPointWithPrivs = append(outPointWithPrivs, &go_coin_btc.UTXOWithPriv{
+			Utxo: go_coin_btc.UTXO{
+				TxId:  btcUtxo.TxId,
+				Index: btcUtxo.Index,
+			},
+			Priv: priv,
+		})
+	}
+	if len(outPointWithPrivs) == 0 {
+		return "", nil, nil, nil, errors.New("Balance not enough. no utxo")
+	}
+
+	logger.InfoF("Build tx...")
+	msgTx, newUtxos, _, err = btcWallet.BuildTx(
+		outPointWithPrivs,
+		fromAddress,
+		toAddr,
+		amount,
+		feeRate*1.1,
+	)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	// 发送交易
+	logger.InfoF("Send tx...")
+	txId, err = btcWallet.RpcClient.SendMsgTx(msgTx)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	return txId, msgTx, spentUtxos, newUtxos, nil
+}
 
 func UpdateUtxo(
 	address string,
 	spentUtxos []constant.UTXO,
 	newUtxos []constant.UTXO,
 ) error {
-	var addrDb db.BtcAddress
+	var addrDb constant.BtcAddress
 	notFound, err := go_mysql.MysqlInstance.SelectFirst(
 		&addrDb,
 		&go_mysql.SelectParams{
@@ -85,7 +146,7 @@ func SelectUtxos(
 	targetAmount float64,
 	estimateFee float64,
 ) ([]constant.UTXO, error) {
-	var addrDb db.BtcAddress
+	var addrDb constant.BtcAddress
 	notFound, err := go_mysql.MysqlInstance.SelectFirst(
 		&addrDb,
 		&go_mysql.SelectParams{
@@ -127,7 +188,7 @@ func SelectUtxos(
 
 }
 
-func CheckUnConfirmedCountAndWait(logger go_logger.InterfaceLogger, task *db.Task) error {
+func CheckUnConfirmedCountAndWait(logger go_logger.InterfaceLogger, task *constant.Task) error {
 	count, err := go_mysql.MysqlInstance.Count(
 		&go_mysql.CountParams{
 			TableName: "btc_tx",

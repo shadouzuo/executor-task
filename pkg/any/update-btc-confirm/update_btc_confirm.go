@@ -3,6 +3,8 @@ package update_btc_confirm
 import (
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/btcsuite/btcd/chaincfg"
 
 	go_best_type "github.com/pefish/go-best-type"
@@ -10,7 +12,6 @@ import (
 	go_format "github.com/pefish/go-format"
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
-	"github.com/shadouzuo/executor-task/pkg/db"
 )
 
 type UpdateBtcConfirmType struct {
@@ -24,7 +25,7 @@ type Config struct {
 }
 
 type ActionTypeData struct {
-	Task *db.Task
+	Task *constant.Task
 }
 
 func New(name string) *UpdateBtcConfirmType {
@@ -36,50 +37,71 @@ func New(name string) *UpdateBtcConfirmType {
 func (p *UpdateBtcConfirmType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	task := ask.Data.(ActionTypeData).Task
 
-	newStatus, err := p.doLoop(exitChan, task)
+	err := p.init(task)
 	if err != nil {
-		p.Logger().Error(err)
-		_, err1 := go_mysql.MysqlInstance.Update(
-			&go_mysql.UpdateParams{
-				TableName: "task",
-				Update: map[string]interface{}{
-					"status": newStatus,
-					"mark":   err.Error(),
-				},
-				Where: map[string]interface{}{
-					"id": task.Id,
-				},
-			},
-		)
-		if err1 != nil {
-			p.Logger().Error(err1)
-			return err1
+		ask.AnswerChan <- constant.TaskResult{
+			BestType: p,
+			Task:     task,
+			Data:     "",
+			Err:      err,
 		}
-		return err
+		return nil
 	}
-	_, err = go_mysql.MysqlInstance.Update(
-		&go_mysql.UpdateParams{
-			TableName: "task",
-			Update: map[string]interface{}{
-				"status": newStatus,
-			},
-			Where: map[string]interface{}{
-				"id": task.Id,
-			},
-		},
-	)
-	if err != nil {
-		p.Logger().Error(err)
-		return err
+
+	timer := time.NewTimer(0)
+	for {
+		select {
+		case <-timer.C:
+			err := p.do(task)
+			if err != nil {
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      err,
+				}
+				return nil
+			}
+			if task.Interval != 0 {
+				timer.Reset(time.Duration(task.Interval) * time.Second)
+				continue
+			}
+			ask.AnswerChan <- constant.TaskResult{
+				BestType: p,
+				Task:     task,
+				Data:     "result",
+				Err:      nil,
+			}
+			p.BestTypeManager().ExitSelf(p.Name())
+			return nil
+		case exitType := <-exitChan:
+			switch exitType {
+			case go_best_type.ExitType_System:
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      errors.New("Exited by system."),
+				}
+				return nil
+			case go_best_type.ExitType_User:
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      errors.New("Exited by user."),
+				}
+				return nil
+			}
+		}
 	}
-	return nil
 }
 
 func (p *UpdateBtcConfirmType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	return nil
 }
 
-func (p *UpdateBtcConfirmType) init(task *db.Task) error {
+func (p *UpdateBtcConfirmType) init(task *constant.Task) error {
 	var config Config
 	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
 	if err != nil {
@@ -94,41 +116,8 @@ func (p *UpdateBtcConfirmType) init(task *db.Task) error {
 	return nil
 }
 
-func (p *UpdateBtcConfirmType) doLoop(exitChan <-chan go_best_type.ExitType, task *db.Task) (constant.TaskStatusType, error) {
-	err := p.init(task)
-	if err != nil {
-		return constant.TaskStatusType_ExitedWithErr, err
-	}
-
-	timer := time.NewTimer(0)
-	for {
-		select {
-		case <-timer.C:
-			err := p.do(task)
-			if err != nil {
-				return constant.TaskStatusType_ExitedWithErr, err
-			}
-			if task.Interval != 0 {
-				timer.Reset(time.Duration(task.Interval) * time.Second)
-			} else {
-				go p.BestTypeManager().ExitOne(p.Name(), go_best_type.ExitType_User)
-			}
-			p.Logger().InfoF("Loop done.")
-		case exitType := <-exitChan:
-			switch exitType {
-			case go_best_type.ExitType_System:
-				p.Logger().InfoF("Exited by system.")
-				return constant.TaskStatusType_WaitExec, nil
-			case go_best_type.ExitType_User:
-				p.Logger().InfoF("Exited by user.")
-				return constant.TaskStatusType_Exited, nil
-			}
-		}
-	}
-}
-
-func (p *UpdateBtcConfirmType) do(task *db.Task) error {
-	btcTxs := make([]db.BtcTx, 0)
+func (p *UpdateBtcConfirmType) do(task *constant.Task) error {
+	btcTxs := make([]constant.BtcTx, 0)
 	err := go_mysql.MysqlInstance.Select(
 		&btcTxs,
 		&go_mysql.SelectParams{
@@ -153,12 +142,13 @@ func (p *UpdateBtcConfirmType) do(task *db.Task) error {
 			p.Logger().Error(err)
 			continue
 		}
+		time.Sleep(time.Second)
 	}
 
 	return nil
 }
 
-func (p *UpdateBtcConfirmType) processTxId(record *db.BtcTx) error {
+func (p *UpdateBtcConfirmType) processTxId(record *constant.BtcTx) error {
 	toTxInfo, err := p.btcWallet.RpcClient.GetRawTransaction(record.TxId)
 	if err != nil {
 		return err

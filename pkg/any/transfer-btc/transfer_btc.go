@@ -1,46 +1,52 @@
-package build_btc_tx
+package transfer_btc
 
 import (
-	"errors"
+	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/btcsuite/btcd/chaincfg"
 
 	go_best_type "github.com/pefish/go-best-type"
 	go_coin_btc "github.com/pefish/go-coin-btc"
+	go_crypto "github.com/pefish/go-crypto"
 	go_format "github.com/pefish/go-format"
-	go_mysql "github.com/pefish/go-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
+	"github.com/shadouzuo/executor-task/pkg/global"
+	"github.com/shadouzuo/executor-task/pkg/util"
 )
 
-type BuildBtcTxType struct {
+type TransferBtcType struct {
 	go_best_type.BaseBestType
 	config    *Config
 	btcWallet *go_coin_btc.Wallet
 }
 
+type AddressInfo struct {
+	Address string  `json:"address"`
+	Amount  float64 `json:"amount"`
+}
+
 type Config struct {
-	BtcNodeUrl     string             `json:"btc_node_url"`
-	UTXOs          []go_coin_btc.UTXO `json:"utxos"`
-	Wif            string             `json:"wif"`
-	ChangeAddress  string             `json:"change_address"`
-	TargetAddress  string             `json:"target_address"`
-	TargetValueBtc float64            `json:"target_value_btc"`
-	FeeRate        float64            `json:"fee_rate"`
+	Wif          string        `json:"wif"`
+	AddressInfos []AddressInfo `json:"address_infos"`
+	BtcNodeUrl   string        `json:"btc_node_url"`
 }
 
 type ActionTypeData struct {
 	Task *constant.Task
 }
 
-func New(name string) *BuildBtcTxType {
-	t := &BuildBtcTxType{}
+func New(name string) *TransferBtcType {
+	t := &TransferBtcType{}
 	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
 	return t
 }
 
-func (p *BuildBtcTxType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+func (p *TransferBtcType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	task := ask.Data.(ActionTypeData).Task
+
 	err := p.init(task)
 	if err != nil {
 		ask.AnswerChan <- constant.TaskResult{
@@ -101,11 +107,11 @@ func (p *BuildBtcTxType) Start(exitChan <-chan go_best_type.ExitType, ask *go_be
 	}
 }
 
-func (p *BuildBtcTxType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+func (p *TransferBtcType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	return nil
 }
 
-func (p *BuildBtcTxType) init(task *constant.Task) error {
+func (p *TransferBtcType) init(task *constant.Task) error {
 	var config Config
 	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
 	if err != nil {
@@ -120,48 +126,58 @@ func (p *BuildBtcTxType) init(task *constant.Task) error {
 	return nil
 }
 
-func (p *BuildBtcTxType) do(task *constant.Task) error {
-
-	keyInfo, err := p.btcWallet.KeyInfoFromWif(p.config.Wif)
+func (p *TransferBtcType) do(task *constant.Task) error {
+	wif, err := go_crypto.CryptoInstance.AesCbcDecrypt(global.GlobalConfig.Pass, p.config.Wif)
+	if err != nil {
+		return err
+	}
+	keyInfo, err := p.btcWallet.KeyInfoFromWif(wif)
+	if err != nil {
+		return err
+	}
+	fromAddress, err := p.btcWallet.AddressFromPubKey(keyInfo.PubKey, go_coin_btc.ADDRESS_TYPE_P2TR)
 	if err != nil {
 		return err
 	}
 
-	utxoWithPrivs := make([]*go_coin_btc.UTXOWithPriv, 0)
-	for _, utxo := range p.config.UTXOs {
-		utxoWithPrivs = append(utxoWithPrivs, &go_coin_btc.UTXOWithPriv{
-			Utxo: utxo,
-			Priv: keyInfo.PrivKey,
-		})
-	}
-	msgTx, _, _, err := p.btcWallet.BuildTx(
-		utxoWithPrivs,
-		p.config.ChangeAddress,
-		p.config.TargetAddress,
-		p.config.TargetValueBtc,
-		p.config.FeeRate,
-	)
-	if err != nil {
-		return err
-	}
-	txHex, err := p.btcWallet.MsgTxToHex(msgTx)
-	if err != nil {
-		return err
-	}
+	for _, addressInfo := range p.config.AddressInfos {
+		err := util.CheckUnConfirmedCountAndWait(p.Logger(), task)
+		if err != nil {
+			return err
+		}
 
-	_, err = go_mysql.MysqlInstance.Update(
-		&go_mysql.UpdateParams{
-			TableName: "task",
-			Update: map[string]interface{}{
-				"mark": txHex,
-			},
-			Where: map[string]interface{}{
-				"id": task.Id,
-			},
-		},
-	)
-	if err != nil {
-		return err
+		p.Logger().InfoF("Prepare send <%s> <%f> BTC.", addressInfo.Address, addressInfo.Amount)
+		_, _, spentUtxos, newUtxos, err := util.SendBtc(
+			p.Logger(),
+			p.btcWallet,
+			keyInfo.PrivKey,
+			fromAddress,
+			addressInfo.Address,
+			addressInfo.Amount,
+		)
+		if err != nil {
+			return err
+		}
+		p.Logger().InfoF("Update from address utxo...")
+		fromAddrNewUtxos := make([]constant.UTXO, 0)
+		for _, newUtxo := range newUtxos {
+			if strings.EqualFold(newUtxo.Address, fromAddress) {
+				fromAddrNewUtxos = append(fromAddrNewUtxos, constant.UTXO{
+					TxId:  newUtxo.TxId,
+					Index: newUtxo.Index,
+					Value: newUtxo.Value,
+				})
+			}
+		}
+		err = util.UpdateUtxo(
+			fromAddress,
+			spentUtxos,
+			fromAddrNewUtxos,
+		)
+		if err != nil {
+			return err
+		}
+		p.Logger().InfoF("Transfer done. address: %s, amount: %f", addressInfo.Address, addressInfo.Amount)
 	}
 
 	return nil

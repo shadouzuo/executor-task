@@ -4,8 +4,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/pkg/errors"
+
+	"github.com/btcsuite/btcd/chaincfg"
 
 	go_best_type "github.com/pefish/go-best-type"
 	go_coin_btc "github.com/pefish/go-coin-btc"
@@ -15,7 +16,6 @@ import (
 	go_mysql "github.com/pefish/go-mysql"
 	go_random "github.com/pefish/go-random"
 	"github.com/shadouzuo/executor-task/pkg/constant"
-	"github.com/shadouzuo/executor-task/pkg/db"
 	"github.com/shadouzuo/executor-task/pkg/global"
 	"github.com/shadouzuo/executor-task/pkg/util"
 )
@@ -27,14 +27,14 @@ type DistributeBtcType struct {
 }
 
 type Config struct {
-	Priv             string   `json:"priv"`
+	Wif              string   `json:"wif"`
 	Amount           string   `json:"amount"`
 	SelectAddressSql []string `json:"select_address_sql"`
 	BtcNodeUrl       string   `json:"btc_node_url"`
 }
 
 type ActionTypeData struct {
-	Task *db.Task
+	Task *constant.Task
 }
 
 func New(name string) *DistributeBtcType {
@@ -46,50 +46,71 @@ func New(name string) *DistributeBtcType {
 func (p *DistributeBtcType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	task := ask.Data.(ActionTypeData).Task
 
-	newStatus, err := p.doLoop(exitChan, task)
+	err := p.init(task)
 	if err != nil {
-		p.Logger().Error(err)
-		_, err1 := go_mysql.MysqlInstance.Update(
-			&go_mysql.UpdateParams{
-				TableName: "task",
-				Update: map[string]interface{}{
-					"status": newStatus,
-					"mark":   err.Error(),
-				},
-				Where: map[string]interface{}{
-					"id": task.Id,
-				},
-			},
-		)
-		if err1 != nil {
-			p.Logger().Error(err1)
-			return err1
+		ask.AnswerChan <- constant.TaskResult{
+			BestType: p,
+			Task:     task,
+			Data:     "",
+			Err:      err,
 		}
-		return err
+		return nil
 	}
-	_, err = go_mysql.MysqlInstance.Update(
-		&go_mysql.UpdateParams{
-			TableName: "task",
-			Update: map[string]interface{}{
-				"status": newStatus,
-			},
-			Where: map[string]interface{}{
-				"id": task.Id,
-			},
-		},
-	)
-	if err != nil {
-		p.Logger().Error(err)
-		return err
+
+	timer := time.NewTimer(0)
+	for {
+		select {
+		case <-timer.C:
+			err := p.do(task)
+			if err != nil {
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      err,
+				}
+				return nil
+			}
+			if task.Interval != 0 {
+				timer.Reset(time.Duration(task.Interval) * time.Second)
+				continue
+			}
+			ask.AnswerChan <- constant.TaskResult{
+				BestType: p,
+				Task:     task,
+				Data:     "result",
+				Err:      nil,
+			}
+			p.BestTypeManager().ExitSelf(p.Name())
+			return nil
+		case exitType := <-exitChan:
+			switch exitType {
+			case go_best_type.ExitType_System:
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      errors.New("Exited by system."),
+				}
+				return nil
+			case go_best_type.ExitType_User:
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      errors.New("Exited by user."),
+				}
+				return nil
+			}
+		}
 	}
-	return nil
 }
 
 func (p *DistributeBtcType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	return nil
 }
 
-func (p *DistributeBtcType) init(task *db.Task) error {
+func (p *DistributeBtcType) init(task *constant.Task) error {
 	var config Config
 	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
 	if err != nil {
@@ -104,40 +125,8 @@ func (p *DistributeBtcType) init(task *db.Task) error {
 	return nil
 }
 
-func (p *DistributeBtcType) doLoop(exitChan <-chan go_best_type.ExitType, task *db.Task) (constant.TaskStatusType, error) {
-	err := p.init(task)
-	if err != nil {
-		return constant.TaskStatusType_ExitedWithErr, err
-	}
-
-	timer := time.NewTimer(0)
-	for {
-		select {
-		case <-timer.C:
-			err := p.do(task)
-			if err != nil {
-				return constant.TaskStatusType_ExitedWithErr, err
-			}
-			if task.Interval != 0 {
-				timer.Reset(time.Duration(task.Interval) * time.Second)
-			} else {
-				go p.BestTypeManager().ExitOne(p.Name(), go_best_type.ExitType_User)
-			}
-		case exitType := <-exitChan:
-			switch exitType {
-			case go_best_type.ExitType_System:
-				p.Logger().InfoF("Exited by system.")
-				return constant.TaskStatusType_WaitExec, nil
-			case go_best_type.ExitType_User:
-				p.Logger().InfoF("Exited by user.")
-				return constant.TaskStatusType_Exited, nil
-			}
-		}
-	}
-}
-
-func (p *DistributeBtcType) do(task *db.Task) error {
-	wif, err := go_crypto.CryptoInstance.AesCbcDecrypt(global.GlobalConfig.Pass, p.config.Priv)
+func (p *DistributeBtcType) do(task *constant.Task) error {
+	wif, err := go_crypto.CryptoInstance.AesCbcDecrypt(global.GlobalConfig.Pass, p.config.Wif)
 	if err != nil {
 		return err
 	}
@@ -145,12 +134,12 @@ func (p *DistributeBtcType) do(task *db.Task) error {
 	if err != nil {
 		return err
 	}
-	addr, err := p.btcWallet.AddressFromPubKey(keyInfo.PubKey, go_coin_btc.ADDRESS_TYPE_P2TR)
+	fromAddress, err := p.btcWallet.AddressFromPubKey(keyInfo.PubKey, go_coin_btc.ADDRESS_TYPE_P2TR)
 	if err != nil {
 		return err
 	}
 
-	addressDbs := make([]*db.BtcAddress, 0)
+	addressDbs := make([]*constant.BtcAddress, 0)
 	err = go_mysql.MysqlInstance.RawSelect(
 		&addressDbs,
 		p.config.SelectAddressSql[0],
@@ -166,7 +155,7 @@ func (p *DistributeBtcType) do(task *db.Task) error {
 			return err
 		}
 
-		var btcAddressDb db.BtcAddress
+		var btcAddressDb constant.BtcAddress
 		notFound, err := go_mysql.MysqlInstance.SelectById(
 			&btcAddressDb,
 			&go_mysql.SelectByIdParams{
@@ -193,121 +182,75 @@ func (p *DistributeBtcType) do(task *db.Task) error {
 		}
 
 		p.Logger().InfoF("Prepare send <%s> <%f> BTC.", btcAddressDb.Address, targetAmount)
-		err = p.send(task, keyInfo.PrivKey, addr, btcAddressDb.Address, targetAmount)
+		txId, msgTx, spentUtxos, newUtxos, err := util.SendBtc(
+			p.Logger(),
+			p.btcWallet,
+			keyInfo.PrivKey,
+			fromAddress,
+			btcAddressDb.Address,
+			targetAmount,
+		)
+		if err != nil {
+			return err
+		}
+
+		// 保存交易记录
+		p.Logger().InfoF("Save tx record...")
+		txHex, _ := p.btcWallet.MsgTxToHex(msgTx)
+		_, err = go_mysql.MysqlInstance.Insert(
+			"btc_tx",
+			constant.BtcTx{
+				TaskId:  task.Id,
+				TxId:    txId,
+				Confirm: 0,
+				TxHex:   txHex,
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		// 更新 utxo
+		p.Logger().InfoF("Update from address utxo...")
+		fromAddrNewUtxos := make([]constant.UTXO, 0)
+		for _, newUtxo := range newUtxos {
+			if strings.EqualFold(newUtxo.Address, fromAddress) {
+				fromAddrNewUtxos = append(fromAddrNewUtxos, constant.UTXO{
+					TxId:  newUtxo.TxId,
+					Index: newUtxo.Index,
+					Value: newUtxo.Value,
+				})
+			}
+		}
+		err = util.UpdateUtxo(
+			fromAddress,
+			spentUtxos,
+			fromAddrNewUtxos,
+		)
+		if err != nil {
+			return err
+		}
+
+		p.Logger().InfoF("Update to address utxo...")
+		toAddrNewUtxos := make([]constant.UTXO, 0)
+		for _, newUtxo := range newUtxos {
+			if strings.EqualFold(newUtxo.Address, btcAddressDb.Address) {
+				toAddrNewUtxos = append(toAddrNewUtxos, constant.UTXO{
+					TxId:  newUtxo.TxId,
+					Index: newUtxo.Index,
+					Value: newUtxo.Value,
+				})
+			}
+		}
+		err = util.UpdateUtxo(
+			btcAddressDb.Address,
+			nil,
+			toAddrNewUtxos,
+		)
 		if err != nil {
 			return err
 		}
 		p.Logger().InfoF("Distribute done. address id: %d, amount: %f", addressDb.Id, targetAmount)
-	}
-
-	return nil
-}
-
-func (p *DistributeBtcType) send(
-	task *db.Task,
-	priv string,
-	fromAddress string,
-	toAddr string,
-	amount float64,
-) error {
-	feeRate, err := p.btcWallet.RpcClient.EstimateSmartFee()
-	if err != nil {
-		return err
-	}
-
-	btcUtxos, err := util.SelectUtxos(fromAddress, amount, 0.001)
-	if err != nil {
-		return err
-	}
-
-	outPointWithPrivs := make([]*go_coin_btc.UTXOWithPriv, 0)
-	for _, btcUtxo := range btcUtxos {
-		outPointWithPrivs = append(outPointWithPrivs, &go_coin_btc.UTXOWithPriv{
-			Utxo: go_coin_btc.UTXO{
-				TxId:  btcUtxo.TxId,
-				Index: btcUtxo.Index,
-			},
-			Priv: priv,
-		})
-	}
-	if len(outPointWithPrivs) == 0 {
-		return errors.New("Balance not enough. no utxo")
-	}
-
-	p.Logger().InfoF("Build tx...")
-	msgTx, newUtxos, _, err := p.btcWallet.BuildTx(
-		outPointWithPrivs,
-		fromAddress,
-		toAddr,
-		amount,
-		feeRate*1.1,
-	)
-	if err != nil {
-		return err
-	}
-
-	// 发送交易
-	p.Logger().InfoF("Send tx...")
-	txId, err := p.btcWallet.RpcClient.SendMsgTx(msgTx)
-	if err != nil {
-		return err
-	}
-
-	// 保存交易记录
-	p.Logger().InfoF("Save tx record...")
-	txHex, _ := p.btcWallet.MsgTxToHex(msgTx)
-	_, err = go_mysql.MysqlInstance.Insert(
-		"btc_tx",
-		db.BtcTx{
-			TaskId:  task.Id,
-			TxId:    txId,
-			Confirm: 0,
-			TxHex:   txHex,
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	// 更新 utxo
-	p.Logger().InfoF("Update from address utxo...")
-	fromAddrNewUtxos := make([]constant.UTXO, 0)
-	for _, newUtxo := range newUtxos {
-		if strings.EqualFold(newUtxo.Address, fromAddress) {
-			fromAddrNewUtxos = append(fromAddrNewUtxos, constant.UTXO{
-				TxId:  newUtxo.TxId,
-				Index: newUtxo.Index,
-				Value: newUtxo.Value,
-			})
-		}
-	}
-	err = util.UpdateUtxo(
-		fromAddress,
-		btcUtxos,
-		fromAddrNewUtxos,
-	)
-	if err != nil {
-		return err
-	}
-
-	p.Logger().InfoF("Update to address utxo...")
-	toAddrNewUtxos := make([]constant.UTXO, 0)
-	for _, newUtxo := range newUtxos {
-		if strings.EqualFold(newUtxo.Address, toAddr) {
-			toAddrNewUtxos = append(toAddrNewUtxos, constant.UTXO{
-				TxId:  newUtxo.TxId,
-				Index: newUtxo.Index,
-				Value: newUtxo.Value,
-			})
-		}
-	}
-	err = util.UpdateUtxo(
-		toAddr,
-		nil,
-		toAddrNewUtxos,
-	)
-	if err != nil {
-		return err
 	}
 
 	return nil

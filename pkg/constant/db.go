@@ -1,9 +1,7 @@
-package db
+package constant
 
 import (
 	"time"
-
-	"github.com/shadouzuo/executor-task/pkg/constant"
 )
 
 type DbTime struct {
@@ -17,11 +15,21 @@ type IdType struct {
 
 type Task struct {
 	IdType
-	Name     string                  `json:"name"`
-	Desc     string                  `json:"desc"`
-	Interval uint64                  `json:"interval"`
-	Data     map[string]interface{}  `json:"data"`
-	Status   constant.TaskStatusType `json:"status,omitempty"`
+	Name     string                 `json:"name"`
+	Desc     string                 `json:"desc"`
+	Interval uint64                 `json:"interval"`
+	Data     map[string]interface{} `json:"data"`
+	Status   TaskStatusType         `json:"status,omitempty"`
+
+	DbTime
+}
+
+type TaskRecord struct {
+	IdType
+	Name     string                 `json:"name"`
+	Interval uint64                 `json:"interval"`
+	Data     map[string]interface{} `json:"data"`
+	Mark     string                 `json:"mark"`
 
 	DbTime
 }

@@ -1,46 +1,45 @@
-package build_btc_tx
+package print_tg_group_id
 
 import (
-	"errors"
+	"fmt"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/btcsuite/btcd/chaincfg"
 
 	go_best_type "github.com/pefish/go-best-type"
 	go_coin_btc "github.com/pefish/go-coin-btc"
 	go_format "github.com/pefish/go-format"
+	go_http "github.com/pefish/go-http"
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
 )
 
-type BuildBtcTxType struct {
+type PrintTgGroupIdType struct {
 	go_best_type.BaseBestType
 	config    *Config
 	btcWallet *go_coin_btc.Wallet
 }
 
 type Config struct {
-	BtcNodeUrl     string             `json:"btc_node_url"`
-	UTXOs          []go_coin_btc.UTXO `json:"utxos"`
-	Wif            string             `json:"wif"`
-	ChangeAddress  string             `json:"change_address"`
-	TargetAddress  string             `json:"target_address"`
-	TargetValueBtc float64            `json:"target_value_btc"`
-	FeeRate        float64            `json:"fee_rate"`
+	BotToken  string `json:"bot_token"`
+	GroupName string `json:"group_name"`
 }
 
 type ActionTypeData struct {
 	Task *constant.Task
 }
 
-func New(name string) *BuildBtcTxType {
-	t := &BuildBtcTxType{}
+func New(name string) *PrintTgGroupIdType {
+	t := &PrintTgGroupIdType{}
 	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
 	return t
 }
 
-func (p *BuildBtcTxType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+func (p *PrintTgGroupIdType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	task := ask.Data.(ActionTypeData).Task
+
 	err := p.init(task)
 	if err != nil {
 		ask.AnswerChan <- constant.TaskResult{
@@ -101,11 +100,11 @@ func (p *BuildBtcTxType) Start(exitChan <-chan go_best_type.ExitType, ask *go_be
 	}
 }
 
-func (p *BuildBtcTxType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+func (p *PrintTgGroupIdType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	return nil
 }
 
-func (p *BuildBtcTxType) init(task *constant.Task) error {
+func (p *PrintTgGroupIdType) init(task *constant.Task) error {
 	var config Config
 	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
 	if err != nil {
@@ -114,46 +113,49 @@ func (p *BuildBtcTxType) init(task *constant.Task) error {
 	p.config = &config
 
 	p.btcWallet = go_coin_btc.NewWallet(&chaincfg.MainNetParams)
-	p.btcWallet.InitRpcClient(&go_coin_btc.RpcServerConfig{
-		Url: config.BtcNodeUrl,
-	})
 	return nil
 }
 
-func (p *BuildBtcTxType) do(task *constant.Task) error {
-
-	keyInfo, err := p.btcWallet.KeyInfoFromWif(p.config.Wif)
-	if err != nil {
-		return err
+func (p *PrintTgGroupIdType) do(task *constant.Task) error {
+	var httpResult struct {
+		Ok     bool `json:"ok"`
+		Result []struct {
+			Message struct {
+				Chat struct {
+					Id    int64  `json:"id"`
+					Title string `json:"title"`
+				} `json:"chat"`
+			} `json:"message"`
+		} `json:"result"`
 	}
-
-	utxoWithPrivs := make([]*go_coin_btc.UTXOWithPriv, 0)
-	for _, utxo := range p.config.UTXOs {
-		utxoWithPrivs = append(utxoWithPrivs, &go_coin_btc.UTXOWithPriv{
-			Utxo: utxo,
-			Priv: keyInfo.PrivKey,
-		})
-	}
-	msgTx, _, _, err := p.btcWallet.BuildTx(
-		utxoWithPrivs,
-		p.config.ChangeAddress,
-		p.config.TargetAddress,
-		p.config.TargetValueBtc,
-		p.config.FeeRate,
+	_, _, err := go_http.NewHttpRequester(
+		go_http.WithLogger(p.Logger()),
+		go_http.WithTimeout(5*time.Second),
+	).GetForStruct(
+		go_http.RequestParam{
+			Url: fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates", p.config.BotToken),
+		},
+		&httpResult,
 	)
 	if err != nil {
 		return err
 	}
-	txHex, err := p.btcWallet.MsgTxToHex(msgTx)
-	if err != nil {
-		return err
+	groupId := 0
+	for _, chat := range httpResult.Result {
+		if chat.Message.Chat.Title == p.config.GroupName {
+			groupId = int(chat.Message.Chat.Id)
+			break
+		}
+	}
+	if groupId == 0 {
+		return errors.New("Group id not found.")
 	}
 
 	_, err = go_mysql.MysqlInstance.Update(
 		&go_mysql.UpdateParams{
 			TableName: "task",
 			Update: map[string]interface{}{
-				"mark": txHex,
+				"mark": groupId,
 			},
 			Where: map[string]interface{}{
 				"id": task.Id,

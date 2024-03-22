@@ -15,7 +15,6 @@ import (
 	go_format "github.com/pefish/go-format"
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
-	"github.com/shadouzuo/executor-task/pkg/db"
 	"github.com/shadouzuo/executor-task/pkg/global"
 	"github.com/shadouzuo/executor-task/pkg/util"
 )
@@ -35,7 +34,7 @@ type Config struct {
 }
 
 type ActionTypeData struct {
-	Task *db.Task
+	Task *constant.Task
 }
 
 func New(name string) *GatherBtcType {
@@ -47,50 +46,71 @@ func New(name string) *GatherBtcType {
 func (p *GatherBtcType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	task := ask.Data.(ActionTypeData).Task
 
-	newStatus, err := p.doLoop(exitChan, task)
+	err := p.init(task)
 	if err != nil {
-		p.Logger().Error(err)
-		_, err1 := go_mysql.MysqlInstance.Update(
-			&go_mysql.UpdateParams{
-				TableName: "task",
-				Update: map[string]interface{}{
-					"status": newStatus,
-					"mark":   err.Error(),
-				},
-				Where: map[string]interface{}{
-					"id": task.Id,
-				},
-			},
-		)
-		if err1 != nil {
-			p.Logger().Error(err1)
-			return err1
+		ask.AnswerChan <- constant.TaskResult{
+			BestType: p,
+			Task:     task,
+			Data:     "",
+			Err:      err,
 		}
-		return err
+		return nil
 	}
-	_, err = go_mysql.MysqlInstance.Update(
-		&go_mysql.UpdateParams{
-			TableName: "task",
-			Update: map[string]interface{}{
-				"status": newStatus,
-			},
-			Where: map[string]interface{}{
-				"id": task.Id,
-			},
-		},
-	)
-	if err != nil {
-		p.Logger().Error(err)
-		return err
+
+	timer := time.NewTimer(0)
+	for {
+		select {
+		case <-timer.C:
+			err := p.do(task)
+			if err != nil {
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      err,
+				}
+				return nil
+			}
+			if task.Interval != 0 {
+				timer.Reset(time.Duration(task.Interval) * time.Second)
+				continue
+			}
+			ask.AnswerChan <- constant.TaskResult{
+				BestType: p,
+				Task:     task,
+				Data:     "result",
+				Err:      nil,
+			}
+			p.BestTypeManager().ExitSelf(p.Name())
+			return nil
+		case exitType := <-exitChan:
+			switch exitType {
+			case go_best_type.ExitType_System:
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      errors.New("Exited by system."),
+				}
+				return nil
+			case go_best_type.ExitType_User:
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      errors.New("Exited by user."),
+				}
+				return nil
+			}
+		}
 	}
-	return nil
 }
 
 func (p *GatherBtcType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	return nil
 }
 
-func (p *GatherBtcType) init(task *db.Task) error {
+func (p *GatherBtcType) init(task *constant.Task) error {
 	var config Config
 	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
 	if err != nil {
@@ -105,41 +125,9 @@ func (p *GatherBtcType) init(task *db.Task) error {
 	return nil
 }
 
-func (p *GatherBtcType) doLoop(exitChan <-chan go_best_type.ExitType, task *db.Task) (constant.TaskStatusType, error) {
-	err := p.init(task)
-	if err != nil {
-		return constant.TaskStatusType_ExitedWithErr, err
-	}
+func (p *GatherBtcType) do(task *constant.Task) error {
 
-	timer := time.NewTimer(0)
-	for {
-		select {
-		case <-timer.C:
-			err := p.do(task)
-			if err != nil {
-				return constant.TaskStatusType_ExitedWithErr, err
-			}
-			if task.Interval != 0 {
-				timer.Reset(time.Duration(task.Interval) * time.Second)
-			} else {
-				go p.BestTypeManager().ExitOne(p.Name(), go_best_type.ExitType_User)
-			}
-		case exitType := <-exitChan:
-			switch exitType {
-			case go_best_type.ExitType_System:
-				p.Logger().InfoF("Exited by system.")
-				return constant.TaskStatusType_WaitExec, nil
-			case go_best_type.ExitType_User:
-				p.Logger().InfoF("Exited by user.")
-				return constant.TaskStatusType_Exited, nil
-			}
-		}
-	}
-}
-
-func (p *GatherBtcType) do(task *db.Task) error {
-
-	addresses := make([]*db.BtcAddress, 0)
+	addresses := make([]*constant.BtcAddress, 0)
 	err := go_mysql.MysqlInstance.RawSelect(
 		&addresses,
 		p.config.SelectAddressSql[0],
@@ -155,7 +143,7 @@ func (p *GatherBtcType) do(task *db.Task) error {
 			return err
 		}
 
-		var targetAddrDb db.BtcAddress
+		var targetAddrDb constant.BtcAddress
 		notFound, err := go_mysql.MysqlInstance.SelectById(
 			&targetAddrDb,
 			&go_mysql.SelectByIdParams{
@@ -182,9 +170,9 @@ func (p *GatherBtcType) do(task *db.Task) error {
 }
 
 func (p *GatherBtcType) gatherBtc(
-	task *db.Task,
-	fromAddrDb *db.BtcAddress,
-	toAddrDb *db.BtcAddress,
+	task *constant.Task,
+	fromAddrDb *constant.BtcAddress,
+	toAddrDb *constant.BtcAddress,
 ) error {
 	fromAddressUtxos := make([]constant.UTXO, 0)
 	if fromAddrDb.Utxos == nil {
@@ -256,7 +244,7 @@ func (p *GatherBtcType) gatherBtc(
 	txHex, _ := p.btcWallet.MsgTxToHex(msgTx)
 	_, err = go_mysql.MysqlInstance.Insert(
 		"btc_tx",
-		db.BtcTx{
+		constant.BtcTx{
 			TaskId:  task.Id,
 			TxId:    txId,
 			TxHex:   txHex,

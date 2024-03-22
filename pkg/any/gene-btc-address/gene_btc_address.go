@@ -1,6 +1,7 @@
-package any
+package gene_btc_address
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,12 +13,15 @@ import (
 	go_format "github.com/pefish/go-format"
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
-	"github.com/shadouzuo/executor-task/pkg/db"
 	"github.com/shadouzuo/executor-task/pkg/global"
 )
 
 type GeneBtcAddressType struct {
 	go_best_type.BaseBestType
+}
+
+type ActionTypeData struct {
+	Task *constant.Task
 }
 
 type GeneBtcAddressConfig struct {
@@ -28,7 +32,7 @@ type GeneBtcAddressConfig struct {
 	TaskId     uint64 `json:"task_id"`
 }
 
-func NewGeneBtcAddressType(name string) *GeneBtcAddressType {
+func New(name string) *GeneBtcAddressType {
 	t := &GeneBtcAddressType{}
 	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
 	return t
@@ -36,84 +40,68 @@ func NewGeneBtcAddressType(name string) *GeneBtcAddressType {
 
 func (p *GeneBtcAddressType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	task := ask.Data.(ActionTypeData).Task
-	newStatus, err := p.doLoop(exitChan, task)
-	if err != nil {
-		p.Logger().Error(err)
-		_, err1 := go_mysql.MysqlInstance.Update(
-			&go_mysql.UpdateParams{
-				TableName: "task",
-				Update: map[string]interface{}{
-					"status": newStatus,
-					"mark":   err.Error(),
-				},
-				Where: map[string]interface{}{
-					"id": task.Id,
-				},
-			},
-		)
-		if err1 != nil {
-			p.Logger().Error(err1)
-			return err1
-		}
-		return err
-	}
-	_, err = go_mysql.MysqlInstance.Update(
-		&go_mysql.UpdateParams{
-			TableName: "task",
-			Update: map[string]interface{}{
-				"status": newStatus,
-			},
-			Where: map[string]interface{}{
-				"id": task.Id,
-			},
-		},
-	)
-	if err != nil {
-		p.Logger().Error(err)
-		return err
-	}
-	return nil
-}
 
-func (p *GeneBtcAddressType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
-	return nil
-}
-
-func (p *GeneBtcAddressType) doLoop(exitChan <-chan go_best_type.ExitType, task *db.Task) (constant.TaskStatusType, error) {
 	timer := time.NewTimer(0)
 	for {
 		select {
 		case <-timer.C:
 			err := p.do(task)
 			if err != nil {
-				return constant.TaskStatusType_ExitedWithErr, err
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      err,
+				}
+				return nil
 			}
 			if task.Interval != 0 {
 				timer.Reset(time.Duration(task.Interval) * time.Second)
-			} else {
-				go p.BestTypeManager().ExitOne(p.Name(), go_best_type.ExitType_User)
+				continue
 			}
+			ask.AnswerChan <- constant.TaskResult{
+				BestType: p,
+				Task:     task,
+				Data:     "result",
+				Err:      nil,
+			}
+			p.BestTypeManager().ExitSelf(p.Name())
+			return nil
 		case exitType := <-exitChan:
 			switch exitType {
 			case go_best_type.ExitType_System:
-				p.Logger().InfoF("Exited by system.")
-				return constant.TaskStatusType_WaitExec, nil
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      errors.New("Exited by system."),
+				}
+				return nil
 			case go_best_type.ExitType_User:
-				p.Logger().InfoF("Exited by user.")
-				return constant.TaskStatusType_Exited, nil
+				ask.AnswerChan <- constant.TaskResult{
+					BestType: p,
+					Task:     task,
+					Data:     "",
+					Err:      errors.New("Exited by user."),
+				}
+				return nil
 			}
 		}
 	}
 }
 
-func (p *GeneBtcAddressType) do(task *db.Task) error {
+func (p *GeneBtcAddressType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+	return nil
+}
+
+func (p *GeneBtcAddressType) do(task *constant.Task) error {
 	var config GeneBtcAddressConfig
 	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
 	if err != nil {
 		return err
 	}
 
-	addresses := make([]db.BtcAddress, 0)
+	addresses := make([]constant.BtcAddress, 0)
 
 	wallet := go_coin_btc.NewWallet(&chaincfg.MainNetParams)
 	seedPass, err := go_crypto.CryptoInstance.AesCbcDecrypt(global.GlobalConfig.Pass, config.Pass)
@@ -130,7 +118,7 @@ func (p *GeneBtcAddressType) do(task *db.Task) error {
 		if err != nil {
 			return err
 		}
-		addresses = append(addresses, db.BtcAddress{
+		addresses = append(addresses, constant.BtcAddress{
 			Address: taprootAddr,
 			Index:   i,
 		})

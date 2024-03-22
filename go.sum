@@ -100,6 +100,8 @@ github.com/pefish/go-best-type v0.2.3 h1:S/Vvj0vu0NC+wtQsJnnzlXDhrHrGKLI2pRoFcgd
 github.com/pefish/go-best-type v0.2.3/go.mod h1:gNvJ+ZbLf6SRgeZaRzkfcCp1xVEHVSB0H0NbQXnz5xo=
 github.com/pefish/go-best-type v0.2.4 h1:6I2D6KKMh98O2vVGUwMuinIrD4eaq1UKrN0JtLJNous=
 github.com/pefish/go-best-type v0.2.4/go.mod h1:gNvJ+ZbLf6SRgeZaRzkfcCp1xVEHVSB0H0NbQXnz5xo=
+github.com/pefish/go-best-type v0.2.5 h1:Lv3jbP7edChbXl+WMhnfq16cCQzNRTHcDlvi4M3sEMk=
+github.com/pefish/go-best-type v0.2.5/go.mod h1:gNvJ+ZbLf6SRgeZaRzkfcCp1xVEHVSB0H0NbQXnz5xo=
 github.com/pefish/go-coin-btc v0.2.5 h1:9XiQtfQ3LlkqjIZtIUUtPVS68umgtyRNkil2RPVMyQs=
 github.com/pefish/go-coin-btc v0.2.5/go.mod h1:v9NIzL42plJkUAznshadkFSeGPeukvqO7368UY3ECNY=
 github.com/pefish/go-coin-btc v0.2.6 h1:xjDCWSkvDWu5u8JTEZnJQ4tccl/LD5LJMjxGEYP9Mp8=

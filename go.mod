@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/btcsuite/btcd v0.24.0
-	github.com/pefish/go-best-type v0.2.4
+	github.com/pefish/go-best-type v0.2.5
 	github.com/pefish/go-coin-btc v0.4.4
 	github.com/pefish/go-commander v0.6.2
 	github.com/pefish/go-config v0.4.0

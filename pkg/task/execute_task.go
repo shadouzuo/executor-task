@@ -8,34 +8,93 @@ import (
 	go_logger "github.com/pefish/go-logger"
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/pkg/errors"
-	any "github.com/shadouzuo/executor-task/pkg/any"
 	build_btc_tx "github.com/shadouzuo/executor-task/pkg/any/build-btc-tx"
 	distribute_btc "github.com/shadouzuo/executor-task/pkg/any/distribute-btc"
 	gather_btc "github.com/shadouzuo/executor-task/pkg/any/gather-btc"
+	gene_btc_address "github.com/shadouzuo/executor-task/pkg/any/gene-btc-address"
+	print_tg_group_id "github.com/shadouzuo/executor-task/pkg/any/print-tg-group-id"
+	print_wifs "github.com/shadouzuo/executor-task/pkg/any/print-wifs"
+	"github.com/shadouzuo/executor-task/pkg/any/test"
+	transfer_btc "github.com/shadouzuo/executor-task/pkg/any/transfer-btc"
 	update_btc_confirm "github.com/shadouzuo/executor-task/pkg/any/update-btc-confirm"
 	update_btc_utxo "github.com/shadouzuo/executor-task/pkg/any/update-btc-utxo"
 	constant "github.com/shadouzuo/executor-task/pkg/constant"
-	"github.com/shadouzuo/executor-task/pkg/db"
 )
 
 type ExecuteTask struct {
 	logger          go_logger.InterfaceLogger
 	bestTypeManager *go_best_type.BestTypeManager
+	taskResultChan  chan interface{}
 }
 
 func NewExecuteTask() *ExecuteTask {
 	w := &ExecuteTask{}
 	w.logger = go_logger.Logger.CloneWithPrefix(w.Name())
 	w.bestTypeManager = go_best_type.NewBestTypeManager(w.logger)
+	w.taskResultChan = make(chan interface{})
 	return w
 }
 
 func (t *ExecuteTask) Init(ctx context.Context) error {
+	// 等任务执行结果的
+	go func() {
+		for {
+			select {
+			case r := <-t.taskResultChan:
+				taskResult := r.(constant.TaskResult)
+				t.Logger().InfoF("<%s> 执行完成.", taskResult.Task.Name)
+				newStatus := constant.TaskStatusType_Exited
+				mark := taskResult.Data
+				if taskResult.Err != nil {
+					if taskResult.Err.Error() == "Exited by system." {
+						newStatus = constant.TaskStatusType_WaitExec
+					} else if taskResult.Err.Error() == "Exited by user." {
+						newStatus = constant.TaskStatusType_Exited
+					} else {
+						t.logger.ErrorF("<%s> 执行错误. #+v", taskResult.Task.Name, taskResult.Err)
+						newStatus = constant.TaskStatusType_ExitedWithErr
+					}
+					mark = taskResult.Err.Error()
+				}
+				_, err := go_mysql.MysqlInstance.Update(
+					&go_mysql.UpdateParams{
+						TableName: "task",
+						Update: map[string]interface{}{
+							"status": newStatus,
+							"mark":   mark,
+						},
+						Where: map[string]interface{}{
+							"id": taskResult.Task.Id,
+						},
+					},
+				)
+				if err != nil {
+					t.logger.Error(err)
+					continue
+				}
+				_, err = go_mysql.MysqlInstance.Insert(
+					"task_record",
+					constant.TaskRecord{
+						Name:     taskResult.Task.Name,
+						Interval: taskResult.Task.Interval,
+						Data:     taskResult.Task.Data,
+						Mark:     mark,
+					},
+				)
+				if err != nil {
+					t.logger.Error(err)
+					continue
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 	return nil
 }
 
 func (t *ExecuteTask) Run(ctx context.Context) error {
-	tasks := make([]*db.Task, 0)
+	tasks := make([]*constant.Task, 0)
 
 	err := go_mysql.MysqlInstance.Select(
 		&tasks,
@@ -98,29 +157,31 @@ func (t *ExecuteTask) Run(ctx context.Context) error {
 	return nil
 }
 
-func (t *ExecuteTask) execTask(task *db.Task) error {
+func (t *ExecuteTask) execTask(task *constant.Task) error {
 	switch task.Status {
 	case constant.TaskStatusType_WaitExec:
 		var bestType go_best_type.IBestType
 
 		switch task.Name {
 		case "test":
-			bestType = any.NewTestType(task.Name)
+			bestType = test.New(task.Name)
 			t.bestTypeManager.Set(bestType)
 			bestType.Ask(&go_best_type.AskType{
 				Action: constant.ActionType_Start,
-				Data: any.ActionTypeData{
+				Data: test.ActionTypeData{
 					Task: task,
 				},
+				AnswerChan: t.taskResultChan,
 			})
 		case "gene_btc_address":
-			bestType = any.NewGeneBtcAddressType(task.Name)
+			bestType = gene_btc_address.New(task.Name)
 			t.bestTypeManager.Set(bestType)
 			bestType.Ask(&go_best_type.AskType{
 				Action: constant.ActionType_Start,
-				Data: any.ActionTypeData{
+				Data: gene_btc_address.ActionTypeData{
 					Task: task,
 				},
+				AnswerChan: t.taskResultChan,
 			})
 		case "distribute_btc":
 			bestType = distribute_btc.New(task.Name)
@@ -130,6 +191,7 @@ func (t *ExecuteTask) execTask(task *db.Task) error {
 				Data: distribute_btc.ActionTypeData{
 					Task: task,
 				},
+				AnswerChan: t.taskResultChan,
 			})
 		case "update_btc_utxo":
 			bestType = update_btc_utxo.New(task.Name)
@@ -139,6 +201,7 @@ func (t *ExecuteTask) execTask(task *db.Task) error {
 				Data: update_btc_utxo.ActionTypeData{
 					Task: task,
 				},
+				AnswerChan: t.taskResultChan,
 			})
 		case "update_btc_confirm":
 			bestType = update_btc_confirm.New(task.Name)
@@ -148,6 +211,7 @@ func (t *ExecuteTask) execTask(task *db.Task) error {
 				Data: update_btc_confirm.ActionTypeData{
 					Task: task,
 				},
+				AnswerChan: t.taskResultChan,
 			})
 		case "gather_btc":
 			bestType = gather_btc.New(task.Name)
@@ -157,6 +221,7 @@ func (t *ExecuteTask) execTask(task *db.Task) error {
 				Data: gather_btc.ActionTypeData{
 					Task: task,
 				},
+				AnswerChan: t.taskResultChan,
 			})
 		case "build_btc_tx":
 			bestType = build_btc_tx.New(task.Name)
@@ -166,6 +231,37 @@ func (t *ExecuteTask) execTask(task *db.Task) error {
 				Data: build_btc_tx.ActionTypeData{
 					Task: task,
 				},
+				AnswerChan: t.taskResultChan,
+			})
+		case "transfer_btc":
+			bestType = transfer_btc.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: transfer_btc.ActionTypeData{
+					Task: task,
+				},
+				AnswerChan: t.taskResultChan,
+			})
+		case "print_wifs":
+			bestType = print_wifs.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: print_wifs.ActionTypeData{
+					Task: task,
+				},
+				AnswerChan: t.taskResultChan,
+			})
+		case "print_tg_group_id":
+			bestType = print_tg_group_id.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: print_tg_group_id.ActionTypeData{
+					Task: task,
+				},
+				AnswerChan: t.taskResultChan,
 			})
 		default:
 			return errors.New("Task not be supported.")
