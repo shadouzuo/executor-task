@@ -69,6 +69,7 @@ func (p *DistributeBtcType) Start(exitChan <-chan go_best_type.ExitType, ask *go
 					Data:     "",
 					Err:      err,
 				}
+				p.BestTypeManager().ExitSelf(p.Name())
 				return nil
 			}
 			if task.Interval != 0 {
@@ -121,7 +122,7 @@ func (p *DistributeBtcType) init(task *constant.Task) error {
 	p.btcWallet = go_coin_btc.NewWallet(&chaincfg.MainNetParams)
 	p.btcWallet.InitRpcClient(&go_coin_btc.RpcServerConfig{
 		Url: config.BtcNodeUrl,
-	})
+	}, 10*time.Second)
 	return nil
 }
 

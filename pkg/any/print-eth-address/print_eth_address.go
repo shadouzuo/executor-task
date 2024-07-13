@@ -1,35 +1,43 @@
-package test
+package print_eth_address
 
 import (
+	"errors"
 	"time"
 
 	go_best_type "github.com/pefish/go-best-type"
-	"github.com/pkg/errors"
+	go_coin_eth "github.com/pefish/go-coin-eth"
+	go_format "github.com/pefish/go-format"
 	"github.com/shadouzuo/executor-task/pkg/constant"
 )
 
-type TestType struct {
+type PrintEthAddressType struct {
 	go_best_type.BaseBestType
-}
-
-func New(name string) *TestType {
-	t := &TestType{}
-	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
-	return t
 }
 
 type ActionTypeData struct {
 	Task *constant.Task
 }
 
-func (p *TestType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+type PrintEthAddressConfig struct {
+	Mnemonic string `json:"mnemonic"`
+	Pass     string `json:"pass"`
+	Path     string `json:"path"`
+}
+
+func New(name string) *PrintEthAddressType {
+	t := &PrintEthAddressType{}
+	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
+	return t
+}
+
+func (p *PrintEthAddressType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	task := ask.Data.(ActionTypeData).Task
 
 	timer := time.NewTimer(0)
 	for {
 		select {
 		case <-timer.C:
-			err := p.do(task)
+			result, err := p.do(task)
 			if err != nil {
 				ask.AnswerChan <- constant.TaskResult{
 					BestType: p,
@@ -47,7 +55,7 @@ func (p *TestType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_typ
 			ask.AnswerChan <- constant.TaskResult{
 				BestType: p,
 				Task:     task,
-				Data:     "result",
+				Data:     result,
 				Err:      nil,
 			}
 			p.BestTypeManager().ExitSelf(p.Name())
@@ -75,11 +83,27 @@ func (p *TestType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_typ
 	}
 }
 
-func (p *TestType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+func (p *PrintEthAddressType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	return nil
 }
 
-func (p *TestType) do(task *constant.Task) error {
-	p.Logger().InfoF("<%s> test...", task.Name)
-	return nil
+func (p *PrintEthAddressType) do(task *constant.Task) (interface{}, error) {
+	var config PrintEthAddressConfig
+	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
+	if err != nil {
+		return "", err
+	}
+
+	wallet := go_coin_eth.NewWallet()
+	seed := wallet.SeedHexByMnemonic(config.Mnemonic, config.Pass)
+
+	result, err := wallet.DeriveFromPath(seed, config.Path)
+	if err != nil {
+		return "", err
+	}
+
+	return map[string]interface{}{
+		"address": result.Address,
+		"priv":    result.PrivateKey,
+	}, nil
 }

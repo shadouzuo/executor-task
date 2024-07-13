@@ -20,6 +20,7 @@ type Task struct {
 	Interval uint64                 `json:"interval"`
 	Data     map[string]interface{} `json:"data"`
 	Status   TaskStatusType         `json:"status,omitempty"`
+	Mark     string                 `json:"mark"`
 
 	DbTime
 }

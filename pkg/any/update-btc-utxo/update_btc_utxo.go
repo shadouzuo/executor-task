@@ -60,6 +60,7 @@ func (p *UpdateBtcUtxoType) Start(exitChan <-chan go_best_type.ExitType, ask *go
 					Data:     "",
 					Err:      err,
 				}
+				p.BestTypeManager().ExitSelf(p.Name())
 				return nil
 			}
 			if task.Interval != 0 {
@@ -132,7 +133,7 @@ func (p *UpdateBtcUtxoType) do(task *constant.Task) error {
 		if err != nil {
 			return err
 		}
-		p.Logger().InfoF("Utxo of <%s> updated.", addrDb.Address)
+		p.Logger().InfoF("Utxo of index <%d> updated.", addrDb.Index)
 		time.Sleep(3 * time.Second)
 	}
 

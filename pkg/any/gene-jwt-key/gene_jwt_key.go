@@ -1,35 +1,41 @@
-package test
+package gene_jwt_key
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	go_best_type "github.com/pefish/go-best-type"
-	"github.com/pkg/errors"
+	go_crypto "github.com/pefish/go-crypto"
+	go_format "github.com/pefish/go-format"
 	"github.com/shadouzuo/executor-task/pkg/constant"
 )
 
-type TestType struct {
+type GeneJwtKeyType struct {
 	go_best_type.BaseBestType
-}
-
-func New(name string) *TestType {
-	t := &TestType{}
-	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
-	return t
 }
 
 type ActionTypeData struct {
 	Task *constant.Task
 }
 
-func (p *TestType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+type GeneJwtKeyTypeConfig struct {
+}
+
+func New(name string) *GeneJwtKeyType {
+	t := &GeneJwtKeyType{}
+	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
+	return t
+}
+
+func (p *GeneJwtKeyType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	task := ask.Data.(ActionTypeData).Task
 
 	timer := time.NewTimer(0)
 	for {
 		select {
 		case <-timer.C:
-			err := p.do(task)
+			result, err := p.do(task)
 			if err != nil {
 				ask.AnswerChan <- constant.TaskResult{
 					BestType: p,
@@ -47,7 +53,7 @@ func (p *TestType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_typ
 			ask.AnswerChan <- constant.TaskResult{
 				BestType: p,
 				Task:     task,
-				Data:     "result",
+				Data:     result,
 				Err:      nil,
 			}
 			p.BestTypeManager().ExitSelf(p.Name())
@@ -75,11 +81,22 @@ func (p *TestType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_typ
 	}
 }
 
-func (p *TestType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+func (p *GeneJwtKeyType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	return nil
 }
 
-func (p *TestType) do(task *constant.Task) error {
-	p.Logger().InfoF("<%s> test...", task.Name)
-	return nil
+func (p *GeneJwtKeyType) do(task *constant.Task) (interface{}, error) {
+	var config GeneJwtKeyTypeConfig
+	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
+	if err != nil {
+		return "", err
+	}
+
+	priv, pubk := go_crypto.CryptoInstance.MustGeneRsaKeyPair()
+	fmt.Println(priv)
+	fmt.Println(pubk)
+	return map[string]interface{}{
+		"priv": priv,
+		"pubk": pubk,
+	}, nil
 }

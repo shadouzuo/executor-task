@@ -5,13 +5,19 @@ import (
 	"time"
 
 	go_best_type "github.com/pefish/go-best-type"
+	go_format "github.com/pefish/go-format"
 	go_logger "github.com/pefish/go-logger"
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/pkg/errors"
 	build_btc_tx "github.com/shadouzuo/executor-task/pkg/any/build-btc-tx"
+	"github.com/shadouzuo/executor-task/pkg/any/check_mbtc_transfer"
 	distribute_btc "github.com/shadouzuo/executor-task/pkg/any/distribute-btc"
+	distribute_evm_token "github.com/shadouzuo/executor-task/pkg/any/distribute-evm-token"
 	gather_btc "github.com/shadouzuo/executor-task/pkg/any/gather-btc"
 	gene_btc_address "github.com/shadouzuo/executor-task/pkg/any/gene-btc-address"
+	gene_jwt_key "github.com/shadouzuo/executor-task/pkg/any/gene-jwt-key"
+	merlin_print_aa_address "github.com/shadouzuo/executor-task/pkg/any/merlin-print-aa-address"
+	print_eth_address "github.com/shadouzuo/executor-task/pkg/any/print-eth-address"
 	print_tg_group_id "github.com/shadouzuo/executor-task/pkg/any/print-tg-group-id"
 	print_wifs "github.com/shadouzuo/executor-task/pkg/any/print-wifs"
 	"github.com/shadouzuo/executor-task/pkg/any/test"
@@ -51,7 +57,7 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 					} else if taskResult.Err.Error() == "Exited by user." {
 						newStatus = constant.TaskStatusType_Exited
 					} else {
-						t.logger.ErrorF("<%s> 执行错误. #+v", taskResult.Task.Name, taskResult.Err)
+						t.logger.ErrorF("<%s> 执行错误. %+v", taskResult.Task.Name, taskResult.Err)
 						newStatus = constant.TaskStatusType_ExitedWithErr
 					}
 					mark = taskResult.Err.Error()
@@ -78,7 +84,7 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 						Name:     taskResult.Task.Name,
 						Interval: taskResult.Task.Interval,
 						Data:     taskResult.Task.Data,
-						Mark:     mark,
+						Mark:     go_format.FormatInstance.ToString(mark),
 					},
 				)
 				if err != nil {
@@ -259,6 +265,56 @@ func (t *ExecuteTask) execTask(task *constant.Task) error {
 			bestType.Ask(&go_best_type.AskType{
 				Action: constant.ActionType_Start,
 				Data: print_tg_group_id.ActionTypeData{
+					Task: task,
+				},
+				AnswerChan: t.taskResultChan,
+			})
+		case "print_eth_address":
+			bestType = print_eth_address.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: print_eth_address.ActionTypeData{
+					Task: task,
+				},
+				AnswerChan: t.taskResultChan,
+			})
+		case "merlin_print_aa_address":
+			bestType = merlin_print_aa_address.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: merlin_print_aa_address.ActionTypeData{
+					Task: task,
+				},
+				AnswerChan: t.taskResultChan,
+			})
+		case "distribute_evm_token":
+			bestType = distribute_evm_token.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: distribute_evm_token.ActionTypeData{
+					Task: task,
+				},
+				AnswerChan: t.taskResultChan,
+			})
+		case "check_mbtc_transfer":
+			bestType = check_mbtc_transfer.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: check_mbtc_transfer.ActionTypeData{
+					Task: task,
+				},
+				AnswerChan: t.taskResultChan,
+			})
+		case "gene_jwt_key":
+			bestType = gene_jwt_key.New(task.Name)
+			t.bestTypeManager.Set(bestType)
+			bestType.Ask(&go_best_type.AskType{
+				Action: constant.ActionType_Start,
+				Data: gene_jwt_key.ActionTypeData{
 					Task: task,
 				},
 				AnswerChan: t.taskResultChan,

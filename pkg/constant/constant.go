@@ -35,5 +35,5 @@ type TaskResult struct {
 	BestType go_best_type.IBestType
 	Task     *Task
 	Err      error
-	Data     string
+	Data     interface{}
 }

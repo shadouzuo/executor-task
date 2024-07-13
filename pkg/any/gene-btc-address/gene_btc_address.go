@@ -53,6 +53,7 @@ func (p *GeneBtcAddressType) Start(exitChan <-chan go_best_type.ExitType, ask *g
 					Data:     "",
 					Err:      err,
 				}
+				p.BestTypeManager().ExitSelf(p.Name())
 				return nil
 			}
 			if task.Interval != 0 {

@@ -12,7 +12,6 @@ import (
 	go_coin_btc "github.com/pefish/go-coin-btc"
 	go_format "github.com/pefish/go-format"
 	go_http "github.com/pefish/go-http"
-	go_mysql "github.com/pefish/go-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
 )
 
@@ -55,7 +54,7 @@ func (p *PrintTgGroupIdType) Start(exitChan <-chan go_best_type.ExitType, ask *g
 	for {
 		select {
 		case <-timer.C:
-			err := p.do(task)
+			result, err := p.do(task)
 			if err != nil {
 				ask.AnswerChan <- constant.TaskResult{
 					BestType: p,
@@ -63,6 +62,7 @@ func (p *PrintTgGroupIdType) Start(exitChan <-chan go_best_type.ExitType, ask *g
 					Data:     "",
 					Err:      err,
 				}
+				p.BestTypeManager().ExitSelf(p.Name())
 				return nil
 			}
 			if task.Interval != 0 {
@@ -72,7 +72,7 @@ func (p *PrintTgGroupIdType) Start(exitChan <-chan go_best_type.ExitType, ask *g
 			ask.AnswerChan <- constant.TaskResult{
 				BestType: p,
 				Task:     task,
-				Data:     "result",
+				Data:     result,
 				Err:      nil,
 			}
 			p.BestTypeManager().ExitSelf(p.Name())
@@ -116,7 +116,7 @@ func (p *PrintTgGroupIdType) init(task *constant.Task) error {
 	return nil
 }
 
-func (p *PrintTgGroupIdType) do(task *constant.Task) error {
+func (p *PrintTgGroupIdType) do(task *constant.Task) (interface{}, error) {
 	var httpResult struct {
 		Ok     bool `json:"ok"`
 		Result []struct {
@@ -132,39 +132,25 @@ func (p *PrintTgGroupIdType) do(task *constant.Task) error {
 		go_http.WithLogger(p.Logger()),
 		go_http.WithTimeout(5*time.Second),
 	).GetForStruct(
-		go_http.RequestParam{
+		&go_http.RequestParams{
 			Url: fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates", p.config.BotToken),
 		},
 		&httpResult,
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 	groupId := 0
-	for _, chat := range httpResult.Result {
+	for i := len(httpResult.Result) - 1; i >= 0; i-- {
+		chat := httpResult.Result[i]
 		if chat.Message.Chat.Title == p.config.GroupName {
 			groupId = int(chat.Message.Chat.Id)
 			break
 		}
 	}
 	if groupId == 0 {
-		return errors.New("Group id not found.")
+		return "", errors.New("Group id not found.")
 	}
 
-	_, err = go_mysql.MysqlInstance.Update(
-		&go_mysql.UpdateParams{
-			TableName: "task",
-			Update: map[string]interface{}{
-				"mark": groupId,
-			},
-			Where: map[string]interface{}{
-				"id": task.Id,
-			},
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return groupId, nil
 }

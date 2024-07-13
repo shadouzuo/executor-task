@@ -57,7 +57,7 @@ func (p *PrintWifsType) Start(exitChan <-chan go_best_type.ExitType, ask *go_bes
 	for {
 		select {
 		case <-timer.C:
-			err := p.do(task)
+			result, err := p.do(task)
 			if err != nil {
 				ask.AnswerChan <- constant.TaskResult{
 					BestType: p,
@@ -65,6 +65,7 @@ func (p *PrintWifsType) Start(exitChan <-chan go_best_type.ExitType, ask *go_bes
 					Data:     "",
 					Err:      err,
 				}
+				p.BestTypeManager().ExitSelf(p.Name())
 				return nil
 			}
 			if task.Interval != 0 {
@@ -74,7 +75,7 @@ func (p *PrintWifsType) Start(exitChan <-chan go_best_type.ExitType, ask *go_bes
 			ask.AnswerChan <- constant.TaskResult{
 				BestType: p,
 				Task:     task,
-				Data:     "result",
+				Data:     result,
 				Err:      nil,
 			}
 			p.BestTypeManager().ExitSelf(p.Name())
@@ -118,7 +119,7 @@ func (p *PrintWifsType) init(task *constant.Task) error {
 	return nil
 }
 
-func (p *PrintWifsType) do(task *constant.Task) error {
+func (p *PrintWifsType) do(task *constant.Task) (interface{}, error) {
 
 	addresses := make([]*constant.BtcAddress, 0)
 	err := go_mysql.MysqlInstance.RawSelect(
@@ -127,36 +128,21 @@ func (p *PrintWifsType) do(task *constant.Task) error {
 		p.config.SelectAddressSql[1],
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 	seedPass, err := go_crypto.CryptoInstance.AesCbcDecrypt(global.GlobalConfig.Pass, p.config.Pass)
 	if err != nil {
-		return err
+		return "", err
 	}
 	seedHex := p.btcWallet.SeedHexByMnemonic(p.config.Mnemonic, seedPass)
 	wifs := make([]string, 0)
 	for _, addrDb := range addresses {
 		keyInfo, err := p.btcWallet.DeriveBySeedPath(seedHex, fmt.Sprintf("m/86'/0'/0'/0/%d", addrDb.Index))
 		if err != nil {
-			return err
+			return "", err
 		}
 		wifs = append(wifs, keyInfo.Wif)
 	}
 
-	_, err = go_mysql.MysqlInstance.Update(
-		&go_mysql.UpdateParams{
-			TableName: "task",
-			Update: map[string]interface{}{
-				"mark": strings.Join(wifs, "\n"),
-			},
-			Where: map[string]interface{}{
-				"id": task.Id,
-			},
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return strings.Join(wifs, "\n"), nil
 }

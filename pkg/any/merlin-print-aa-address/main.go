@@ -1,6 +1,7 @@
-package update_btc_confirm
+package merlin_print_aa_address
 
 import (
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -10,33 +11,33 @@ import (
 	go_best_type "github.com/pefish/go-best-type"
 	go_coin_btc "github.com/pefish/go-coin-btc"
 	go_format "github.com/pefish/go-format"
+	go_http "github.com/pefish/go-http"
 	go_mysql "github.com/pefish/go-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
 )
 
-type UpdateBtcConfirmType struct {
+type MerlinPrintAaAddressType struct {
 	go_best_type.BaseBestType
 	config    *Config
 	btcWallet *go_coin_btc.Wallet
 }
 
 type Config struct {
-	BtcNodeUrl string `json:"btc_node_url"`
+	SelectAddressSql []string `json:"select_address_sql"`
 }
 
 type ActionTypeData struct {
 	Task *constant.Task
 }
 
-func New(name string) *UpdateBtcConfirmType {
-	t := &UpdateBtcConfirmType{}
+func New(name string) *MerlinPrintAaAddressType {
+	t := &MerlinPrintAaAddressType{}
 	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
 	return t
 }
 
-func (p *UpdateBtcConfirmType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+func (p *MerlinPrintAaAddressType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	task := ask.Data.(ActionTypeData).Task
-
 	err := p.init(task)
 	if err != nil {
 		ask.AnswerChan <- constant.TaskResult{
@@ -52,7 +53,7 @@ func (p *UpdateBtcConfirmType) Start(exitChan <-chan go_best_type.ExitType, ask 
 	for {
 		select {
 		case <-timer.C:
-			err := p.do(task)
+			result, err := p.do(task)
 			if err != nil {
 				ask.AnswerChan <- constant.TaskResult{
 					BestType: p,
@@ -70,7 +71,7 @@ func (p *UpdateBtcConfirmType) Start(exitChan <-chan go_best_type.ExitType, ask 
 			ask.AnswerChan <- constant.TaskResult{
 				BestType: p,
 				Task:     task,
-				Data:     "result",
+				Data:     result,
 				Err:      nil,
 			}
 			p.BestTypeManager().ExitSelf(p.Name())
@@ -98,11 +99,11 @@ func (p *UpdateBtcConfirmType) Start(exitChan <-chan go_best_type.ExitType, ask 
 	}
 }
 
-func (p *UpdateBtcConfirmType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
+func (p *MerlinPrintAaAddressType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
 	return nil
 }
 
-func (p *UpdateBtcConfirmType) init(task *constant.Task) error {
+func (p *MerlinPrintAaAddressType) init(task *constant.Task) error {
 	var config Config
 	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
 	if err != nil {
@@ -111,69 +112,69 @@ func (p *UpdateBtcConfirmType) init(task *constant.Task) error {
 	p.config = &config
 
 	p.btcWallet = go_coin_btc.NewWallet(&chaincfg.MainNetParams)
-	p.btcWallet.InitRpcClient(&go_coin_btc.RpcServerConfig{
-		Url: config.BtcNodeUrl,
-	}, 10*time.Second)
 	return nil
 }
 
-func (p *UpdateBtcConfirmType) do(task *constant.Task) error {
-	btcTxs := make([]constant.BtcTx, 0)
-	err := go_mysql.MysqlInstance.Select(
-		&btcTxs,
-		&go_mysql.SelectParams{
-			TableName: "btc_tx",
-			Select:    "*",
-			Where: map[string]interface{}{
-				"confirm": 0,
-			},
-		},
+func (p *MerlinPrintAaAddressType) do(task *constant.Task) (interface{}, error) {
+
+	addresses := make([]*constant.BtcAddress, 0)
+	err := go_mysql.MysqlInstance.RawSelect(
+		&addresses,
+		p.config.SelectAddressSql[0],
+		p.config.SelectAddressSql[1],
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	if len(btcTxs) == 0 {
-		p.Logger().InfoF("Nothing.")
-	}
-
-	for _, tx := range btcTxs {
-		err := p.processTxId(&tx)
+	aaAddresses := make([]string, 0)
+	for _, addrDb := range addresses {
+		aaAddress, err := p.getAaAddress(addrDb.Address)
 		if err != nil {
-			p.Logger().Error(err)
-			continue
+			return nil, err
 		}
+		aaAddresses = append(aaAddresses, aaAddress)
+		_, err = go_mysql.MysqlInstance.Update(&go_mysql.UpdateParams{
+			TableName: "btc_address",
+			Update: map[string]interface{}{
+				"merlin_address": aaAddress,
+			},
+			Where: map[string]interface{}{
+				"id": addrDb.Id,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		p.Logger().InfoF("<%d> done.", addrDb.Id)
 		time.Sleep(time.Second)
 	}
 
-	return nil
+	return strings.Join(aaAddresses, ","), nil
 }
 
-func (p *UpdateBtcConfirmType) processTxId(record *constant.BtcTx) error {
-	toTxInfo, err := p.btcWallet.RpcClient.GetRawTransaction(record.TxId)
-	if err != nil {
-		return err
+func (p *MerlinPrintAaAddressType) getAaAddress(btcAddress string) (string, error) {
+	var httpResult struct {
+		Code uint64 `json:"code"`
+		Data struct {
+			AaAddress string `json:"aa"`
+		} `json:"data"`
+		Msg string `json:"msg"`
 	}
-	if toTxInfo.Confirmations == 0 {
-		p.Logger().DebugF("Confirmations not update. tx id: %s", record.TxId)
-		return nil
-	}
-	// update
-	_, err = go_mysql.MysqlInstance.Update(
-		&go_mysql.UpdateParams{
-			TableName: "btc_tx",
-			Update: map[string]interface{}{
-				"confirm": toTxInfo.Confirmations,
-			},
-			Where: map[string]interface{}{
-				"id": record.Id,
+	_, _, err := go_http.NewHttpRequester(go_http.WithLogger(p.Logger())).GetForStruct(
+		&go_http.RequestParams{
+			Url: "https://bridge.merlinchain.io/api/v1/address/match_by_btc",
+			Params: map[string]interface{}{
+				"address": btcAddress,
 			},
 		},
+		&httpResult,
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
-	p.Logger().InfoF("Processed. tx_id: %s, confirmations: %d", record.TxId, toTxInfo.Confirmations)
-
-	return nil
+	if httpResult.Code != 0 {
+		return "", errors.New(httpResult.Msg)
+	}
+	return httpResult.Data.AaAddress, nil
 }

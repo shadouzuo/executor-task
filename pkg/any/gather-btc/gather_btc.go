@@ -31,6 +31,8 @@ type Config struct {
 	SelectAddressSql []string `json:"select_address_sql"`
 	TargetAddressId  uint64   `json:"target_address_id"`
 	BtcNodeUrl       string   `json:"btc_node_url"`
+	FeeRate          float64  `json:"fee_rate"`
+	Batch            uint64   `json:"batch"`
 }
 
 type ActionTypeData struct {
@@ -69,6 +71,7 @@ func (p *GatherBtcType) Start(exitChan <-chan go_best_type.ExitType, ask *go_bes
 					Data:     "",
 					Err:      err,
 				}
+				p.BestTypeManager().ExitSelf(p.Name())
 				return nil
 			}
 			if task.Interval != 0 {
@@ -121,7 +124,7 @@ func (p *GatherBtcType) init(task *constant.Task) error {
 	p.btcWallet = go_coin_btc.NewWallet(&chaincfg.MainNetParams)
 	p.btcWallet.InitRpcClient(&go_coin_btc.RpcServerConfig{
 		Url: config.BtcNodeUrl,
-	})
+	}, 10*time.Second)
 	return nil
 }
 
@@ -137,33 +140,39 @@ func (p *GatherBtcType) do(task *constant.Task) error {
 		return err
 	}
 
-	for _, addrDb := range addresses {
+	var targetAddrDb constant.BtcAddress
+	notFound, err := go_mysql.MysqlInstance.SelectById(
+		&targetAddrDb,
+		&go_mysql.SelectByIdParams{
+			TableName: "btc_address",
+			Select:    "*",
+			Id:        p.config.TargetAddressId,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if notFound {
+		return errors.New("Target address not found.")
+	}
+
+	slippedAddresses := go_format.NewFormatInstance[*constant.BtcAddress]().GroupSlice(addresses, p.config.Batch)
+
+	for _, addresses := range slippedAddresses {
 		err := util.CheckUnConfirmedCountAndWait(p.Logger(), task)
 		if err != nil {
 			return err
 		}
 
-		var targetAddrDb constant.BtcAddress
-		notFound, err := go_mysql.MysqlInstance.SelectById(
-			&targetAddrDb,
-			&go_mysql.SelectByIdParams{
-				TableName: "btc_address",
-				Select:    "*",
-				Id:        p.config.TargetAddressId,
-			},
-		)
+		err = p.gatherBtc(task, addresses, &targetAddrDb)
 		if err != nil {
 			return err
 		}
-		if notFound {
-			return errors.New("Target address not found.")
+		indexes := make([]string, 0)
+		for _, addressDb := range addresses {
+			indexes = append(indexes, go_format.FormatInstance.ToString(addressDb.Index))
 		}
-
-		err = p.gatherBtc(task, addrDb, &targetAddrDb)
-		if err != nil {
-			return err
-		}
-		p.Logger().InfoF("Address id <%d> gather done.", addrDb.Id)
+		p.Logger().InfoF("Address indexes <%s> gather done.", strings.Join(indexes, ","))
 	}
 
 	return nil
@@ -171,26 +180,16 @@ func (p *GatherBtcType) do(task *constant.Task) error {
 
 func (p *GatherBtcType) gatherBtc(
 	task *constant.Task,
-	fromAddrDb *constant.BtcAddress,
+	addressDbs []*constant.BtcAddress,
 	toAddrDb *constant.BtcAddress,
 ) error {
-	fromAddressUtxos := make([]constant.UTXO, 0)
-	if fromAddrDb.Utxos == nil {
-		p.Logger().Error("No utxos.")
-		return nil
-	}
-	err := json.Unmarshal([]byte(*fromAddrDb.Utxos), &fromAddressUtxos)
-	if err != nil {
-		return err
-	}
-	if len(fromAddressUtxos) == 0 {
-		p.Logger().Error("No utxos.")
-		return nil
-	}
-
-	feeRate, err := p.btcWallet.RpcClient.EstimateSmartFee()
-	if err != nil {
-		return err
+	feeRate := p.config.FeeRate
+	if feeRate == 0 {
+		feeRate_, err := p.btcWallet.RpcClient.EstimateSmartFee()
+		if err != nil {
+			return err
+		}
+		feeRate = feeRate_
 	}
 
 	seedPass, err := go_crypto.CryptoInstance.AesCbcDecrypt(global.GlobalConfig.Pass, p.config.Pass)
@@ -198,32 +197,51 @@ func (p *GatherBtcType) gatherBtc(
 		return err
 	}
 	seedHex := p.btcWallet.SeedHexByMnemonic(p.config.Mnemonic, seedPass)
-	keyInfo, err := p.btcWallet.DeriveBySeedPath(seedHex, fmt.Sprintf("m/86'/0'/0'/0/%d", fromAddrDb.Index))
-	if err != nil {
-		return err
-	}
 
 	outPointWithPrivs := make([]*go_coin_btc.UTXOWithPriv, 0)
-	for _, utxo := range fromAddressUtxos {
-		outPointWithPrivs = append(outPointWithPrivs, &go_coin_btc.UTXOWithPriv{
-			Utxo: go_coin_btc.UTXO{
-				TxId:  utxo.TxId,
-				Index: utxo.Index,
-			},
-			Priv: keyInfo.PrivKey,
-		})
+	for _, addressDb := range addressDbs {
+		fromAddressUtxos := make([]constant.UTXO, 0)
+		if addressDb.Utxos == nil {
+			p.Logger().ErrorF("index <%d> no utxos.", addressDb.Index)
+			continue
+		}
+		err := json.Unmarshal([]byte(*addressDb.Utxos), &fromAddressUtxos)
+		if err != nil {
+			return err
+		}
+		if len(fromAddressUtxos) == 0 {
+			p.Logger().ErrorF("index <%d> no utxos.", addressDb.Index)
+			continue
+		}
+
+		keyInfo, err := p.btcWallet.DeriveBySeedPath(seedHex, fmt.Sprintf("m/86'/0'/0'/0/%d", addressDb.Index))
+		if err != nil {
+			return err
+		}
+
+		for _, utxo := range fromAddressUtxos {
+			outPointWithPrivs = append(outPointWithPrivs, &go_coin_btc.UTXOWithPriv{
+				Utxo: go_coin_btc.UTXO{
+					TxId:  utxo.TxId,
+					Index: utxo.Index,
+				},
+				Priv: keyInfo.PrivKey,
+			})
+		}
 	}
+
 	if len(outPointWithPrivs) == 0 {
-		return errors.New("Balance not enough. no utxo")
+		p.Logger().InfoF("Balance not enough. no utxo")
+		return nil
 	}
 
 	p.Logger().InfoF("Build tx...")
-	msgTx, newUtxos, _, err := p.btcWallet.BuildTx(
+	msgTx, newUtxos, realFee, err := p.btcWallet.BuildTx(
 		outPointWithPrivs,
 		"",
 		toAddrDb.Address,
 		0,
-		feeRate*1.2,
+		feeRate,
 	)
 	if err != nil {
 		return err
@@ -231,6 +249,11 @@ func (p *GatherBtcType) gatherBtc(
 	for _, utxo := range newUtxos {
 		p.Logger().InfoF("tx_id: %s, addr: %s, value: %f, index: %d", utxo.TxId, utxo.Address, utxo.Value, utxo.Index)
 	}
+	txHex, err := p.btcWallet.MsgTxToHex(msgTx)
+	if err != nil {
+		return err
+	}
+	p.Logger().InfoF("feeRate: %f, realFee: %f, hex: %s", feeRate, realFee, txHex)
 
 	// 发送交易
 	p.Logger().InfoF("Send tx...")
@@ -241,7 +264,6 @@ func (p *GatherBtcType) gatherBtc(
 
 	// 保存交易记录
 	p.Logger().InfoF("Save tx record...")
-	txHex, _ := p.btcWallet.MsgTxToHex(msgTx)
 	_, err = go_mysql.MysqlInstance.Insert(
 		"btc_tx",
 		constant.BtcTx{
@@ -256,6 +278,10 @@ func (p *GatherBtcType) gatherBtc(
 	}
 
 	// 更新 utxo
+	addresses := make([]string, 0)
+	for _, addressDb := range addressDbs {
+		addresses = append(addresses, addressDb.Address)
+	}
 	p.Logger().InfoF("Update utxo...")
 	_, err = go_mysql.MysqlInstance.Update(
 		&go_mysql.UpdateParams{
@@ -264,7 +290,7 @@ func (p *GatherBtcType) gatherBtc(
 				"utxos": "[]",
 			},
 			Where: map[string]interface{}{
-				"address": fromAddrDb.Address,
+				"address": addresses,
 			},
 		},
 	)

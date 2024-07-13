@@ -201,7 +201,7 @@ func CheckUnConfirmedCountAndWait(logger go_logger.InterfaceLogger, task *consta
 	if err != nil {
 		return err
 	}
-	if count >= 10 {
+	if count >= 20 {
 		logger.InfoF("UnConfirmed tx count >= 10, just wait.")
 		time.Sleep(10 * time.Second)
 		err = CheckUnConfirmedCountAndWait(logger, task)
