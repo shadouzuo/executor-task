@@ -45,4 +45,3 @@ GO_CONFIG=/path/to/config executor-task
 ## 授权许可
 
 [Apache License](LICENSE).
-
