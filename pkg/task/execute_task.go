@@ -119,10 +119,10 @@ func (t *ExecuteTask) Run(ctx context.Context) error {
 		return err
 	}
 
-	// if len(tasks) == 0 {
-	// 	t.logger.InfoF("Nothing.")
-	// 	return nil
-	// }
+	if len(tasks) == 0 {
+		t.logger.InfoF("No task to execute.")
+		return nil
+	}
 
 	for _, task := range tasks {
 		_, err := go_mysql.MysqlInstance.Update(
