@@ -6,6 +6,7 @@ import (
 
 	go_best_type "github.com/pefish/go-best-type"
 	go_coin_eth "github.com/pefish/go-coin-eth"
+	go_crypto "github.com/pefish/go-crypto"
 	go_format "github.com/pefish/go-format"
 	"github.com/shadouzuo/executor-task/pkg/constant"
 )
@@ -102,8 +103,13 @@ func (p *PrintEthAddressType) do(task *constant.Task) (interface{}, error) {
 		return "", err
 	}
 
+	cryptedPriv, err := go_crypto.CryptoInstance.AesCbcEncrypt(config.Pass, result.PrivateKey)
+	if err != nil {
+		return "", err
+	}
 	return map[string]interface{}{
-		"address": result.Address,
-		"priv":    result.PrivateKey,
+		"address":     result.Address,
+		"priv":        result.PrivateKey,
+		"cryptedPriv": cryptedPriv,
 	}, nil
 }

@@ -14,19 +14,17 @@ jobs:
       - name: Deploy
         uses: fjogeleit/http-request-action@v1
         with:
-          url: 'http://xxx/api/v1/ci-start'
+          url: 'http://52.68.233.193:10021/api/v1/ci-start'
           method: 'POST'
           customHeaders: '{"Content-Type": "application/json"}'
           data: >-
             {
               "env": "prod",
-              "project_name": "shadouzuo-executor-task",
-              "src_path": "~/src/shadouzuo/executor-task",
-              "token": "${{ secrets.TOKEN }}",
+              "repo": "git@github.com:shadouzuo/executor-task.git",
+              "fetch_code_key": "~/.ssh/github_pefish",
               "port": 0,
-              "config_path": "~/data/shadouzuo/executor-task-prod",
-              "alert_tg_token": "",
-              "alert_tg_group_id": "",
-              "loki_url": ""
+              "alert_tg_token": "6886244250:AAE7za4HAuXPPoCvi-5AYseQP2FjCD591QA",
+              "alert_tg_group_id": "-4165544291",
+              "docker_network": "jinniu"
             }
 
