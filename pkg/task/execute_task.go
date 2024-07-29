@@ -70,7 +70,7 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 						Update: map[string]interface{}{
 							"data":   "{}",
 							"status": newStatus,
-							"mark":   mark,
+							"mark":   go_crypto.CryptoInstance.MustAesCbcEncrypt(global.GlobalConfig.Pass, go_format.FormatInstance.ToString(mark)),
 						},
 						Where: map[string]interface{}{
 							"id": taskResult.Task.Id,
