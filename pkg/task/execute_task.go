@@ -5,6 +5,7 @@ import (
 	"time"
 
 	go_best_type "github.com/pefish/go-best-type"
+	go_crypto "github.com/pefish/go-crypto"
 	go_format "github.com/pefish/go-format"
 	go_logger "github.com/pefish/go-logger"
 	go_mysql "github.com/pefish/go-mysql"
@@ -25,6 +26,7 @@ import (
 	update_btc_confirm "github.com/shadouzuo/executor-task/pkg/any/update-btc-confirm"
 	update_btc_utxo "github.com/shadouzuo/executor-task/pkg/any/update-btc-utxo"
 	constant "github.com/shadouzuo/executor-task/pkg/constant"
+	"github.com/shadouzuo/executor-task/pkg/global"
 )
 
 type ExecuteTask struct {
@@ -66,6 +68,7 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 					&go_mysql.UpdateParams{
 						TableName: "task",
 						Update: map[string]interface{}{
+							"data":   "{}",
 							"status": newStatus,
 							"mark":   mark,
 						},
@@ -83,8 +86,10 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 					constant.TaskRecord{
 						Name:     taskResult.Task.Name,
 						Interval: taskResult.Task.Interval,
-						Data:     taskResult.Task.Data,
-						Mark:     go_format.FormatInstance.ToString(mark),
+						Data: map[string]interface{}{
+							"data": go_crypto.CryptoInstance.MustAesCbcEncrypt(global.GlobalConfig.Pass, go_format.FormatInstance.ToString(taskResult.Task.Data)),
+						},
+						Mark: go_crypto.CryptoInstance.MustAesCbcEncrypt(global.GlobalConfig.Pass, go_format.FormatInstance.ToString(mark)),
 					},
 				)
 				if err != nil {
@@ -129,6 +134,7 @@ func (t *ExecuteTask) Run(ctx context.Context) error {
 			&go_mysql.UpdateParams{
 				TableName: "task",
 				Update: map[string]interface{}{
+					"data":   "{}",
 					"status": constant.TaskStatusType_Executing,
 				},
 				Where: map[string]interface{}{
