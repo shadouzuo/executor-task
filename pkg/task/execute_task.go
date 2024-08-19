@@ -52,7 +52,7 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 				taskResult := r.(constant.TaskResult)
 				t.Logger().InfoF("<%s> 执行完成.", taskResult.Task.Name)
 				newStatus := constant.TaskStatusType_Exited
-				mark := go_crypto.CryptoInstance.MustAesCbcEncrypt(global.GlobalConfig.Pass, go_format.FormatInstance.ToString(taskResult.Data))
+				mark := taskResult.Data
 				if taskResult.Err != nil {
 					if taskResult.Err.Error() == "Exited by system." {
 						newStatus = constant.TaskStatusType_WaitExec
