@@ -52,7 +52,7 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 				taskResult := r.(constant.TaskResult)
 				t.Logger().InfoF("<%s> 执行完成.", taskResult.Task.Name)
 				newStatus := constant.TaskStatusType_Exited
-				mark := taskResult.Data
+				mark := go_crypto.CryptoInstance.MustAesCbcEncrypt(global.GlobalConfig.Pass, go_format.FormatInstance.ToString(taskResult.Data))
 				if taskResult.Err != nil {
 					if taskResult.Err.Error() == "Exited by system." {
 						newStatus = constant.TaskStatusType_WaitExec
@@ -70,7 +70,7 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 						Update: map[string]interface{}{
 							"data":   "{}",
 							"status": newStatus,
-							"mark":   go_crypto.CryptoInstance.MustAesCbcEncrypt(global.GlobalConfig.Pass, go_format.FormatInstance.ToString(mark)),
+							"mark":   mark,
 						},
 						Where: map[string]interface{}{
 							"id": taskResult.Task.Id,
@@ -89,7 +89,7 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 						Data: map[string]interface{}{
 							"data": go_crypto.CryptoInstance.MustAesCbcEncrypt(global.GlobalConfig.Pass, go_format.FormatInstance.ToString(taskResult.Task.Data)),
 						},
-						Mark: go_crypto.CryptoInstance.MustAesCbcEncrypt(global.GlobalConfig.Pass, go_format.FormatInstance.ToString(mark)),
+						Mark: mark,
 					},
 				)
 				if err != nil {
