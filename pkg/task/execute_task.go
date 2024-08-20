@@ -89,7 +89,7 @@ func (t *ExecuteTask) Init(ctx context.Context) error {
 						Data: map[string]interface{}{
 							"data": go_crypto.CryptoInstance.MustAesCbcEncrypt(global.GlobalConfig.Pass, go_format.FormatInstance.ToString(taskResult.Task.Data)),
 						},
-						Mark: mark,
+						Mark: go_crypto.CryptoInstance.MustAesCbcEncrypt(global.GlobalConfig.Pass, mark),
 					},
 				)
 				if err != nil {
