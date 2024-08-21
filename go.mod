@@ -12,7 +12,7 @@ require (
 	github.com/pefish/go-commander v0.8.1
 	github.com/pefish/go-crypto v0.4.2
 	github.com/pefish/go-decimal v0.4.0
-	github.com/pefish/go-format v0.3.2
+	github.com/pefish/go-format v0.3.3
 	github.com/pefish/go-http v0.7.0
 	github.com/pefish/go-logger v0.5.6
 	github.com/pefish/go-mysql v1.4.8

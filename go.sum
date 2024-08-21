@@ -201,8 +201,6 @@ github.com/pefish/go-best-type v0.2.5 h1:Lv3jbP7edChbXl+WMhnfq16cCQzNRTHcDlvi4M3
 github.com/pefish/go-best-type v0.2.5/go.mod h1:gNvJ+ZbLf6SRgeZaRzkfcCp1xVEHVSB0H0NbQXnz5xo=
 github.com/pefish/go-coin-btc v0.4.9 h1:HfjwuvR6QT9Q+35wNkwa6rcd67KjydQFwblCJwt0eJ0=
 github.com/pefish/go-coin-btc v0.4.9/go.mod h1:h+wwiE89t/yjS0lUzrk/Y6kOx3R2EpmypJN/4YQ4s8w=
-github.com/pefish/go-coin-eth v1.2.4 h1:sCAt5oBx6RlAzNza7j094CfuN6xUa3h0DZkDQE/OY7E=
-github.com/pefish/go-coin-eth v1.2.4/go.mod h1:rYkq2EezriQjNwJ9fPhReXbBaaEuyk+L2Y1SucP4Vko=
 github.com/pefish/go-coin-eth v1.2.5 h1:ArWV3b4/2H3wkj03HkqHVOw+JzAyrYlHwmr3OANqTP0=
 github.com/pefish/go-coin-eth v1.2.5/go.mod h1:BLP6nVz+lkdLw62jXEOt6MOmFIofmACzfDs2wpjhiHg=
 github.com/pefish/go-commander v0.8.1 h1:rxBS5AkTV9DvUGO1AoHo28SKtnZyWZ9hoYjuwrmJFGg=
@@ -219,8 +217,8 @@ github.com/pefish/go-error v1.0.8 h1:IC1UCHkeFvtTpvDfVxBNEoA4yQNk4VKV+mhO3JW5Nxk
 github.com/pefish/go-error v1.0.8/go.mod h1:CGliu23YIh+xakY+vs6xWLoaXOMAq+2qT87dVN3ZlzM=
 github.com/pefish/go-file v0.2.3 h1:glBhRD2Gn2YZB6Krw3I8rlkcDhf/BlSDA6PN8FIU0sc=
 github.com/pefish/go-file v0.2.3/go.mod h1:SsTQNSzKWUrpHJVZD1wyOjRAiXx4cIUgjSYMTHD1zxI=
-github.com/pefish/go-format v0.3.2 h1:0MihBkCV8WdY5GmHiaCAJnzbgv25mFmUcfnmumdSKrA=
-github.com/pefish/go-format v0.3.2/go.mod h1:rI2ykz+2t8VattiNtK1yxm0KwsBOJTyPOMwSFblW62A=
+github.com/pefish/go-format v0.3.3 h1:sSeovavK/hQvbHQDKLMYZcTSbqv7oZKpfSjHW9Xcfe8=
+github.com/pefish/go-format v0.3.3/go.mod h1:1AepmLAmAReyaqdlG3VEyzcjVxs1+6hdQuynsSO6008=
 github.com/pefish/go-http v0.7.0 h1:FwuzHPCFvx6RSHl1ByQCA1D5c9EIz4gPR+fHPhJ5V6o=
 github.com/pefish/go-http v0.7.0/go.mod h1:bEwCWo9Rfa6TwIr30UlgTj1zhI2c1dULAZQ/yGc4gSU=
 github.com/pefish/go-logger v0.5.6 h1:eAsk4iOZp/9fh5Rz/uRjtidNXBh4ovrgIHEkb/K297c=
@@ -233,8 +231,6 @@ github.com/pefish/go-task-driver v0.2.3 h1:h88ZO4v5cBndZdaxDucB9yJJM0vdDf9vAQ6lA
 github.com/pefish/go-task-driver v0.2.3/go.mod h1:wT3yVq14BccR+tg1W95qUbgDtmwykjFM2BmjWyCv8fM=
 github.com/pefish/go-test v0.0.4 h1:s1RmZWe91K1MtENJUcl7CjGUFK/TmleZ5h3OkHq/BTI=
 github.com/pefish/go-test v0.0.4/go.mod h1:z9DAQQyjfKx0dRTBSaJCOSMwyMjwNEHI+/CBwNaCwk0=
-github.com/pefish/go-test-assert v0.0.2 h1:AuEJxG99DsFb9+qSUnSEWJDlTn0gf1PmGkKcOUAFAjw=
-github.com/pefish/go-test-assert v0.0.2/go.mod h1:J97UDNwnZPqlbfPegtOc/IjeqFjD+c6LXWRxKl4ToEo=
 github.com/pefish/go-time v0.3.3 h1:9hEatuz3X+h2hGKzxFYhxiMka3QJvPpbeuiWx7q5gUY=
 github.com/pefish/go-time v0.3.3/go.mod h1:QO6RKtlUBbbOGEoJEZA/+vmQvfBdavAMP09ROZhTV0Q=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
