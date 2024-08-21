@@ -2,6 +2,8 @@ package print_eth_address
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	go_best_type "github.com/pefish/go-best-type"
@@ -98,18 +100,48 @@ func (p *PrintEthAddressType) do(task *constant.Task) (interface{}, error) {
 	wallet := go_coin_eth.NewWallet()
 	seed := wallet.SeedHexByMnemonic(config.Mnemonic, config.Pass)
 
-	result, err := wallet.DeriveFromPath(seed, config.Path)
-	if err != nil {
-		return "", err
+	results := make([]map[string]interface{}, 0)
+
+	arr := strings.Split(config.Path, "-")
+	if len(arr) <= 1 {
+		result, err := wallet.DeriveFromPath(seed, config.Path)
+		if err != nil {
+			return "", err
+		}
+		cryptedPriv, err := go_crypto.CryptoInstance.AesCbcEncrypt(config.Pass, result.PrivateKey)
+		if err != nil {
+			return "", err
+		}
+		results = append(results, map[string]interface{}{
+			"address":     result.Address,
+			"priv":        result.PrivateKey,
+			"cryptedPriv": cryptedPriv,
+		})
+	} else {
+		lastPos := strings.LastIndex(arr[0], "/")
+		startIndex := go_format.FormatInstance.MustToInt(arr[0][lastPos+1:])
+		endIndex := go_format.FormatInstance.MustToInt(arr[1])
+
+		pathPrefix := arr[0][:lastPos+1]
+
+		for i := startIndex; i < endIndex; i++ {
+			path := fmt.Sprintf("%s%d", pathPrefix, i)
+			result, err := wallet.DeriveFromPath(seed, path)
+			if err != nil {
+				return "", err
+			}
+			cryptedPriv, err := go_crypto.CryptoInstance.AesCbcEncrypt(config.Pass, result.PrivateKey)
+			if err != nil {
+				return "", err
+			}
+			results = append(results, map[string]interface{}{
+				"address":     result.Address,
+				"priv":        result.PrivateKey,
+				"cryptedPriv": cryptedPriv,
+			})
+		}
+
 	}
 
-	cryptedPriv, err := go_crypto.CryptoInstance.AesCbcEncrypt(config.Pass, result.PrivateKey)
-	if err != nil {
-		return "", err
-	}
-	return map[string]interface{}{
-		"address":     result.Address,
-		"priv":        result.PrivateKey,
-		"cryptedPriv": cryptedPriv,
-	}, nil
+	return results, nil
 }
