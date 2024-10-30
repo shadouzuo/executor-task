@@ -68,7 +68,7 @@ func (p *GatherBtcType) Start(ctx context.Context, task *constant.Task) (any, er
 				timer.Reset(time.Duration(task.Interval) * time.Second)
 				continue
 			}
-			return nil, nil
+			return "", nil
 		case <-ctx.Done():
 			return nil, nil
 		}
@@ -156,7 +156,7 @@ func (p *GatherBtcType) gatherBtc(
 		feeRate = go_decimal.Decimal.MustStart(feeRate_).RoundDown(0).MustEndForInt64()
 	}
 
-	seedPass, err := go_crypto.AesCbcDecrypt(global.GlobalConfig.Pass, p.config.Pass)
+	seedPass, err := go_crypto.AesCbcDecrypt(global.GlobalConfigInDb.Pass, p.config.Pass)
 	if err != nil {
 		return err
 	}

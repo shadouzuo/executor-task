@@ -7,6 +7,7 @@ require (
 	github.com/pefish/go-coin-btc v0.7.0
 	github.com/pefish/go-coin-eth v1.9.7
 	github.com/pefish/go-commander v1.1.1
+	github.com/pefish/go-config v0.5.7
 	github.com/pefish/go-crypto v0.4.3
 	github.com/pefish/go-decimal v0.4.5
 	github.com/pefish/go-format v0.5.1
@@ -51,7 +52,6 @@ require (
 	github.com/kkdai/bstream v1.0.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
-	github.com/pefish/go-config v0.5.7 // indirect
 	github.com/pefish/go-desensitize v0.0.7 // indirect
 	github.com/pefish/go-logger v0.6.2 // indirect
 	github.com/pefish/go-time v0.3.4 // indirect

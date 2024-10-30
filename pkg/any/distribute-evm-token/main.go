@@ -60,7 +60,7 @@ func (p *DistributeEthType) Start(ctx context.Context, task *constant.Task) (any
 				timer.Reset(time.Duration(task.Interval) * time.Second)
 				continue
 			}
-			return nil, nil
+			return "", nil
 		case <-ctx.Done():
 			return nil, nil
 		}
@@ -83,7 +83,7 @@ func (p *DistributeEthType) init(task *constant.Task) error {
 }
 
 func (p *DistributeEthType) do(task *constant.Task) error {
-	priv, err := go_crypto.AesCbcDecrypt(global.GlobalConfig.Pass, p.config.Priv)
+	priv, err := go_crypto.AesCbcDecrypt(global.GlobalConfigInDb.Pass, p.config.Priv)
 	if err != nil {
 		return err
 	}

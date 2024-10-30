@@ -5,6 +5,7 @@ import (
 	"github.com/shadouzuo/executor-task/pkg/task"
 
 	"github.com/pefish/go-commander"
+	go_config "github.com/pefish/go-config"
 	t_mysql "github.com/pefish/go-interface/t-mysql"
 	go_mysql "github.com/pefish/go-mysql"
 	task_driver "github.com/pefish/go-task-driver"
@@ -33,6 +34,11 @@ func (dc *DefaultCommand) Init(command *commander.Commander) error {
 		Password: global.GlobalConfig.DbPass,
 		Database: global.GlobalConfig.DbDb,
 	})
+	if err != nil {
+		return err
+	}
+
+	err = go_config.FetchConfigsFromDb(&global.GlobalConfigInDb, global.MysqlInstance)
 	if err != nil {
 		return err
 	}

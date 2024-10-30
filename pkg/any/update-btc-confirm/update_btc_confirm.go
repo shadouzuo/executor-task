@@ -53,7 +53,7 @@ func (p *UpdateBtcConfirmType) Start(ctx context.Context, task *constant.Task) (
 				timer.Reset(time.Duration(task.Interval) * time.Second)
 				continue
 			}
-			return nil, nil
+			return "", nil
 		case <-ctx.Done():
 			return nil, nil
 		}

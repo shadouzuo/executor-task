@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	go_crypto "github.com/pefish/go-crypto"
@@ -25,6 +26,7 @@ import (
 	transfer_btc "github.com/shadouzuo/executor-task/pkg/any/transfer-btc"
 	update_btc_confirm "github.com/shadouzuo/executor-task/pkg/any/update-btc-confirm"
 	update_btc_utxo "github.com/shadouzuo/executor-task/pkg/any/update-btc-utxo"
+	watch_contract_read_result "github.com/shadouzuo/executor-task/pkg/any/watch-contract-read-result"
 	constant "github.com/shadouzuo/executor-task/pkg/constant"
 	"github.com/shadouzuo/executor-task/pkg/global"
 )
@@ -32,6 +34,7 @@ import (
 type ExecuteTask struct {
 	logger  i_logger.ILogger
 	cancels map[string]context.CancelFunc
+	wg      sync.WaitGroup
 }
 
 func NewExecuteTask(logger i_logger.ILogger) *ExecuteTask {
@@ -72,25 +75,25 @@ func (t *ExecuteTask) Run(ctx context.Context) error {
 	}
 
 	for _, task := range tasks {
-		_, err := global.MysqlInstance.Update(
-			&t_mysql.UpdateParams{
-				TableName: "task",
-				Update: map[string]interface{}{
-					"data":   "{}",
-					"status": constant.TaskStatusType_Executing,
-				},
-				Where: map[string]interface{}{
-					"id": task.Id,
-				},
-			},
-		)
-		if err != nil {
-			return err
-		}
-		newCtx, cancel := context.WithCancel(ctx)
-		t.cancels[task.Name] = cancel
 		switch task.Status {
 		case constant.TaskStatusType_WaitExec:
+			_, err := global.MysqlInstance.Update(
+				&t_mysql.UpdateParams{
+					TableName: "task",
+					Update: map[string]interface{}{
+						"status": constant.TaskStatusType_Executing,
+					},
+					Where: map[string]interface{}{
+						"id": task.Id,
+					},
+				},
+			)
+			if err != nil {
+				return err
+			}
+
+			newCtx, cancel := context.WithCancel(ctx)
+			t.cancels[task.Name] = cancel
 			switch task.Name {
 			case "test":
 				t.execTaskAsync(newCtx, test.New(t.logger), task)
@@ -122,6 +125,8 @@ func (t *ExecuteTask) Run(ctx context.Context) error {
 				t.execTaskAsync(newCtx, check_mbtc_transfer.New(t.logger), task)
 			case "gene_jwt_key":
 				t.execTaskAsync(newCtx, gene_jwt_key.New(t.logger), task)
+			case "watch_contract_read_result":
+				t.execTaskAsync(newCtx, watch_contract_read_result.New(t.logger), task)
 			default:
 				return errors.New("Task not be supported.")
 			}
@@ -140,10 +145,41 @@ func (t *ExecuteTask) execTaskAsync(
 	executor any_.IExecutor,
 	task *constant.Task,
 ) {
+	t.wg.Add(1)
 	go func() {
+		defer t.wg.Done()
 		result, err := executor.Start(ctx, task)
-		t.Logger().InfoF("<%s> 执行完成.", task.Name)
+
 		newStatus := constant.TaskStatusType_Exited
+		data := task.Data
+		if result != nil {
+			t.Logger().InfoF("<%s> 执行完成.", task.Name)
+			data = make(map[string]interface{}, 0)
+		} else {
+			t.Logger().InfoF("<%s> 执行中断.", task.Name)
+			var newTask constant.Task
+			_, err = global.MysqlInstance.SelectFirst(
+				&newTask,
+				&t_mysql.SelectParams{
+					TableName: "task",
+					Select:    "*",
+					Where:     "id = ?",
+				},
+				task.Id,
+			)
+			if err != nil {
+				t.logger.Error(err)
+				return
+			}
+			if newTask.Status == constant.TaskStatusType_WaitExit {
+				t.Logger().InfoF("<%s> 用户中断.", task.Name)
+				newStatus = constant.TaskStatusType_Exited
+			} else {
+				t.Logger().InfoF("<%s> 系统中断.", task.Name)
+				newStatus = constant.TaskStatusType_WaitExec
+			}
+		}
+
 		mark := go_format.ToString(result)
 		if err != nil {
 			t.logger.ErrorF("<%s> 执行错误. %+v", task.Name, err)
@@ -154,7 +190,7 @@ func (t *ExecuteTask) execTaskAsync(
 			&t_mysql.UpdateParams{
 				TableName: "task",
 				Update: map[string]interface{}{
-					"data":   "{}",
+					"data":   data,
 					"status": newStatus,
 					"mark":   mark,
 				},
@@ -167,28 +203,29 @@ func (t *ExecuteTask) execTaskAsync(
 			t.logger.Error(err)
 			return
 		}
-		_, err = global.MysqlInstance.Insert(
-			"task_record",
-			constant.TaskRecord{
-				Name:     task.Name,
-				Interval: task.Interval,
-				Data: map[string]interface{}{
-					"data": go_crypto.MustAesCbcEncrypt(global.GlobalConfig.Pass, go_format.ToString(task.Data)),
+		if newStatus == constant.TaskStatusType_Exited {
+			_, err = global.MysqlInstance.Insert(
+				"task_record",
+				constant.TaskRecord{
+					Name:     task.Name,
+					Interval: task.Interval,
+					Data: map[string]interface{}{
+						"data": go_crypto.MustAesCbcEncrypt(global.GlobalConfigInDb.Pass, go_format.ToString(task.Data)),
+					},
+					Mark: go_crypto.MustAesCbcEncrypt(global.GlobalConfigInDb.Pass, mark),
 				},
-				Mark: go_crypto.MustAesCbcEncrypt(global.GlobalConfig.Pass, mark),
-			},
-		)
-		if err != nil {
-			t.logger.Error(err)
-			return
+			)
+			if err != nil {
+				t.logger.Error(err)
+				return
+			}
 		}
 	}()
 
 }
 
 func (t *ExecuteTask) Stop() error {
-	// 将所有正在运行的任务状态改成等待运行
-
+	t.wg.Wait()
 	return nil
 }
 

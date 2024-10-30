@@ -87,7 +87,7 @@ func (p *PrintWifsType) do(task *constant.Task) (interface{}, error) {
 	if err != nil {
 		return "", err
 	}
-	seedPass, err := go_crypto.AesCbcDecrypt(global.GlobalConfig.Pass, p.config.Pass)
+	seedPass, err := go_crypto.AesCbcDecrypt(global.GlobalConfigInDb.Pass, p.config.Pass)
 	if err != nil {
 		return "", err
 	}

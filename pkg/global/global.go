@@ -12,8 +12,13 @@ type Config struct {
 	DbDb   string `json:"db-db" default:"" usage:"Database to connect."`
 	DbUser string `json:"db-user" default:"admin" usage:"Username to connect database."`
 	DbPass string `json:"db-pass" default:"" usage:"Password to connect database."`
-	Pass   string `json:"pass" default:"" usage:"Password to decrypt sth."`
 }
+
+type ConfigInDb struct {
+	Pass string `json:"pass" default:"" usage:"Password to decrypt sth."`
+}
+
+var GlobalConfigInDb ConfigInDb
 
 var GlobalConfig Config
 

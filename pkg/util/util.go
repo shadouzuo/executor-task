@@ -2,13 +2,16 @@ package util
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/btcsuite/btcd/wire"
 	go_coin_btc "github.com/pefish/go-coin-btc"
 	go_decimal "github.com/pefish/go-decimal"
+	go_http "github.com/pefish/go-http"
 	i_logger "github.com/pefish/go-interface/i-logger"
 	t_mysql "github.com/pefish/go-interface/t-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
@@ -214,5 +217,36 @@ func CheckUnConfirmedCountAndWait(logger i_logger.ILogger, task *constant.Task) 
 			return err
 		}
 	}
+	return nil
+}
+
+func Alert(logger i_logger.ILogger, msg string, alertKey string) error {
+	var httpResult struct {
+		ErrCode uint64 `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	_, _, err := go_http.NewHttpRequester(
+		go_http.WithLogger(logger),
+		go_http.WithTimeout(5*time.Second),
+	).PostForStruct(
+		&go_http.RequestParams{
+			Url: fmt.Sprintf("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=%s", alertKey),
+			Params: map[string]interface{}{
+				"msgtype": "text",
+				"text": map[string]interface{}{
+					"content":        msg,
+					"mentioned_list": []string{"@all"},
+				},
+			},
+		},
+		&httpResult,
+	)
+	if err != nil {
+		return err
+	}
+	if httpResult.ErrCode != 0 {
+		return errors.Errorf(httpResult.ErrMsg)
+	}
+
 	return nil
 }

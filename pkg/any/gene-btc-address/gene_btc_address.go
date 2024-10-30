@@ -68,7 +68,7 @@ func (p *GeneBtcAddressType) do(task *constant.Task) error {
 	addresses := make([]constant.BtcAddress, 0)
 
 	wallet := go_coin_btc.NewWallet(&chaincfg.MainNetParams, p.logger)
-	seedPass, err := go_crypto.AesCbcDecrypt(global.GlobalConfig.Pass, config.Pass)
+	seedPass, err := go_crypto.AesCbcDecrypt(global.GlobalConfigInDb.Pass, config.Pass)
 	if err != nil {
 		return err
 	}
