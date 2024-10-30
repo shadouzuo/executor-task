@@ -1,8 +1,9 @@
 package main
 
 import (
+	"log"
+
 	"github.com/pefish/go-commander"
-	go_logger "github.com/pefish/go-logger"
 	"github.com/shadouzuo/executor-task/cmd/executor-task/command"
 	"github.com/shadouzuo/executor-task/version"
 )
@@ -16,6 +17,6 @@ func main() {
 	})
 	err := commanderInstance.Run()
 	if err != nil {
-		go_logger.Logger.Error(err)
+		log.Fatal(err)
 	}
 }

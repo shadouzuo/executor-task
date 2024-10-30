@@ -5,7 +5,7 @@ import (
 	"github.com/shadouzuo/executor-task/pkg/task"
 
 	"github.com/pefish/go-commander"
-	go_logger "github.com/pefish/go-logger"
+	t_mysql "github.com/pefish/go-interface/t-mysql"
 	go_mysql "github.com/pefish/go-mysql"
 	task_driver "github.com/pefish/go-task-driver"
 )
@@ -26,9 +26,8 @@ func (dc *DefaultCommand) Data() interface{} {
 }
 
 func (dc *DefaultCommand) Init(command *commander.Commander) error {
-
-	go_mysql.MysqlInstance.SetLogger(go_logger.Logger)
-	err := go_mysql.MysqlInstance.ConnectWithConfiguration(go_mysql.Configuration{
+	global.MysqlInstance = go_mysql.NewMysqlInstance(command.Logger)
+	err := global.MysqlInstance.ConnectWithConfiguration(t_mysql.Configuration{
 		Host:     global.GlobalConfig.DbHost,
 		Username: global.GlobalConfig.DbUser,
 		Password: global.GlobalConfig.DbPass,
@@ -42,13 +41,13 @@ func (dc *DefaultCommand) Init(command *commander.Commander) error {
 }
 
 func (dc *DefaultCommand) OnExited(command *commander.Commander) error {
-	go_mysql.MysqlInstance.Close()
+	global.MysqlInstance.Close()
 	return nil
 }
 
 func (dc *DefaultCommand) Start(command *commander.Commander) error {
 	taskDriver := task_driver.NewTaskDriver()
-	taskDriver.Register(task.NewExecuteTask())
+	taskDriver.Register(task.NewExecuteTask(command.Logger))
 	taskDriver.RunWait(command.Ctx)
 	return nil
 }

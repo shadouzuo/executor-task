@@ -1,6 +1,9 @@
 package global
 
-import "github.com/pefish/go-commander"
+import (
+	"github.com/pefish/go-commander"
+	go_mysql "github.com/pefish/go-mysql"
+)
 
 type Config struct {
 	commander.BasicConfig
@@ -13,3 +16,5 @@ type Config struct {
 }
 
 var GlobalConfig Config
+
+var MysqlInstance *go_mysql.MysqlType

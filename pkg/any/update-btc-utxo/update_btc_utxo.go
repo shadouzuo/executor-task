@@ -1,21 +1,21 @@
 package update_btc_utxo
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
-	"github.com/pkg/errors"
-
-	go_best_type "github.com/pefish/go-best-type"
-	"github.com/pefish/go-coin-btc/pkg/btccom"
+	"github.com/pefish/go-coin-btc/btccom"
 	go_decimal "github.com/pefish/go-decimal"
 	go_format "github.com/pefish/go-format"
-	go_mysql "github.com/pefish/go-mysql"
+	i_logger "github.com/pefish/go-interface/i-logger"
+	t_mysql "github.com/pefish/go-interface/t-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
+	"github.com/shadouzuo/executor-task/pkg/global"
 )
 
 type UpdateBtcUtxoType struct {
-	go_best_type.BaseBestType
+	logger       i_logger.ILogger
 	config       *Config
 	btcComClient *btccom.BtcComClient
 }
@@ -28,24 +28,17 @@ type ActionTypeData struct {
 	Task *constant.Task
 }
 
-func New(name string) *UpdateBtcUtxoType {
-	t := &UpdateBtcUtxoType{}
-	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
+func New(logger i_logger.ILogger) *UpdateBtcUtxoType {
+	t := &UpdateBtcUtxoType{
+		logger: logger,
+	}
 	return t
 }
 
-func (p *UpdateBtcUtxoType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
-	task := ask.Data.(ActionTypeData).Task
-
+func (p *UpdateBtcUtxoType) Start(ctx context.Context, task *constant.Task) (any, error) {
 	err := p.init(task)
 	if err != nil {
-		ask.AnswerChan <- constant.TaskResult{
-			BestType: p,
-			Task:     task,
-			Data:     "",
-			Err:      err,
-		}
-		return nil
+		return nil, err
 	}
 
 	timer := time.NewTimer(0)
@@ -54,64 +47,29 @@ func (p *UpdateBtcUtxoType) Start(exitChan <-chan go_best_type.ExitType, ask *go
 		case <-timer.C:
 			err := p.do(task)
 			if err != nil {
-				ask.AnswerChan <- constant.TaskResult{
-					BestType: p,
-					Task:     task,
-					Data:     "",
-					Err:      err,
-				}
-				p.BestTypeManager().ExitSelf(p.Name())
-				return nil
+				return nil, err
 			}
 			if task.Interval != 0 {
 				timer.Reset(time.Duration(task.Interval) * time.Second)
 				continue
 			}
-			ask.AnswerChan <- constant.TaskResult{
-				BestType: p,
-				Task:     task,
-				Data:     "result",
-				Err:      nil,
-			}
-			p.BestTypeManager().ExitSelf(p.Name())
-			return nil
-		case exitType := <-exitChan:
-			switch exitType {
-			case go_best_type.ExitType_System:
-				ask.AnswerChan <- constant.TaskResult{
-					BestType: p,
-					Task:     task,
-					Data:     "",
-					Err:      errors.New("Exited by system."),
-				}
-				return nil
-			case go_best_type.ExitType_User:
-				ask.AnswerChan <- constant.TaskResult{
-					BestType: p,
-					Task:     task,
-					Data:     "",
-					Err:      errors.New("Exited by user."),
-				}
-				return nil
-			}
+			return nil, nil
+		case <-ctx.Done():
+			return nil, nil
 		}
 	}
 }
 
-func (p *UpdateBtcUtxoType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
-	return nil
-}
-
 func (p *UpdateBtcUtxoType) init(task *constant.Task) error {
 	var config Config
-	err := go_format.FormatInstance.MapToStruct(&config, task.Data)
+	err := go_format.MapToStruct(&config, task.Data)
 	if err != nil {
 		return err
 	}
 	p.config = &config
 
 	p.btcComClient = btccom.NewBtcComClient(
-		p.Logger(),
+		p.logger,
 		20*time.Second,
 		"",
 	)
@@ -120,7 +78,7 @@ func (p *UpdateBtcUtxoType) init(task *constant.Task) error {
 
 func (p *UpdateBtcUtxoType) do(task *constant.Task) error {
 	addresses := make([]*constant.BtcAddress, 0)
-	err := go_mysql.MysqlInstance.RawSelect(
+	err := global.MysqlInstance.RawSelect(
 		&addresses,
 		p.config.SelectAddressSql[0],
 		p.config.SelectAddressSql[1],
@@ -133,7 +91,7 @@ func (p *UpdateBtcUtxoType) do(task *constant.Task) error {
 		if err != nil {
 			return err
 		}
-		p.Logger().InfoF("Utxo of index <%d> updated.", addrDb.Index)
+		p.logger.InfoF("Utxo of index <%d> updated.", addrDb.Index)
 		time.Sleep(3 * time.Second)
 	}
 
@@ -156,7 +114,7 @@ func (p *UpdateBtcUtxoType) updateUtxo(addrDb *constant.BtcAddress) error {
 	}
 
 	b, _ := json.Marshal(utxos)
-	_, err = go_mysql.MysqlInstance.Update(&go_mysql.UpdateParams{
+	_, err = global.MysqlInstance.Update(&t_mysql.UpdateParams{
 		TableName: "btc_address",
 		Update: map[string]interface{}{
 			"utxos": string(b),

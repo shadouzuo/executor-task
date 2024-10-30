@@ -8,13 +8,15 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	go_coin_btc "github.com/pefish/go-coin-btc"
-	go_logger "github.com/pefish/go-logger"
-	go_mysql "github.com/pefish/go-mysql"
+	go_decimal "github.com/pefish/go-decimal"
+	i_logger "github.com/pefish/go-interface/i-logger"
+	t_mysql "github.com/pefish/go-interface/t-mysql"
 	"github.com/shadouzuo/executor-task/pkg/constant"
+	"github.com/shadouzuo/executor-task/pkg/global"
 )
 
 func SendBtc(
-	logger go_logger.InterfaceLogger,
+	logger i_logger.ILogger,
 	btcWallet *go_coin_btc.Wallet,
 	priv string,
 	fromAddress string,
@@ -24,9 +26,15 @@ func SendBtc(
 	txId string,
 	msgTx *wire.MsgTx,
 	spentUtxos []constant.UTXO,
-	newUtxos []*go_coin_btc.UTXO,
+	newUtxos map[string][]*go_coin_btc.OutPoint,
 	err error,
 ) {
+
+	err = btcWallet.AddAccountByPrivKey(priv)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
 	feeRate, err := btcWallet.RpcClient.EstimateSmartFee()
 	if err != nil {
 		return "", nil, nil, nil, err
@@ -37,27 +45,24 @@ func SendBtc(
 		return "", nil, nil, nil, err
 	}
 
-	outPointWithPrivs := make([]*go_coin_btc.UTXOWithPriv, 0)
+	outPoints := make([]*go_coin_btc.OutPoint, 0)
 	for _, btcUtxo := range spentUtxos {
-		outPointWithPrivs = append(outPointWithPrivs, &go_coin_btc.UTXOWithPriv{
-			Utxo: go_coin_btc.UTXO{
-				TxId:  btcUtxo.TxId,
-				Index: btcUtxo.Index,
-			},
-			Priv: priv,
+		outPoints = append(outPoints, &go_coin_btc.OutPoint{
+			Hash:  btcUtxo.TxId,
+			Index: int(btcUtxo.Index),
 		})
 	}
-	if len(outPointWithPrivs) == 0 {
+	if len(outPoints) == 0 {
 		return "", nil, nil, nil, errors.New("Balance not enough. no utxo")
 	}
 
 	logger.InfoF("Build tx...")
 	msgTx, newUtxos, _, err = btcWallet.BuildTx(
-		outPointWithPrivs,
+		outPoints,
 		fromAddress,
 		toAddr,
 		amount,
-		feeRate*1.1,
+		go_decimal.Decimal.MustStart(feeRate).RoundDown(0).MustEndForInt64(),
 	)
 	if err != nil {
 		return "", nil, nil, nil, err
@@ -79,9 +84,9 @@ func UpdateUtxo(
 	newUtxos []constant.UTXO,
 ) error {
 	var addrDb constant.BtcAddress
-	notFound, err := go_mysql.MysqlInstance.SelectFirst(
+	notFound, err := global.MysqlInstance.SelectFirst(
 		&addrDb,
-		&go_mysql.SelectParams{
+		&t_mysql.SelectParams{
 			TableName: "btc_address",
 			Select:    "*",
 			Where: map[string]interface{}{
@@ -123,8 +128,8 @@ func UpdateUtxo(
 
 	// 更新
 	b, _ := json.Marshal(newAddressUtxos)
-	_, err = go_mysql.MysqlInstance.Update(
-		&go_mysql.UpdateParams{
+	_, err = global.MysqlInstance.Update(
+		&t_mysql.UpdateParams{
 			TableName: "btc_address",
 			Update: map[string]interface{}{
 				"utxos": string(b),
@@ -147,9 +152,9 @@ func SelectUtxos(
 	estimateFee float64,
 ) ([]constant.UTXO, error) {
 	var addrDb constant.BtcAddress
-	notFound, err := go_mysql.MysqlInstance.SelectFirst(
+	notFound, err := global.MysqlInstance.SelectFirst(
 		&addrDb,
-		&go_mysql.SelectParams{
+		&t_mysql.SelectParams{
 			TableName: "btc_address",
 			Select:    "*",
 			Where: map[string]interface{}{
@@ -188,9 +193,9 @@ func SelectUtxos(
 
 }
 
-func CheckUnConfirmedCountAndWait(logger go_logger.InterfaceLogger, task *constant.Task) error {
-	count, err := go_mysql.MysqlInstance.Count(
-		&go_mysql.CountParams{
+func CheckUnConfirmedCountAndWait(logger i_logger.ILogger, task *constant.Task) error {
+	count, err := global.MysqlInstance.Count(
+		&t_mysql.CountParams{
 			TableName: "btc_tx",
 			Where: map[string]interface{}{
 				"task_id": task.Id,

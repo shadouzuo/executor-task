@@ -55,10 +55,10 @@ type BtcTx struct {
 
 type BtcUtxo struct {
 	IdType
-	Address string  `json:"address"`
-	TxId    string  `json:"tx_id"`
-	Index   uint64  `json:"index"`
-	Value   float64 `json:"value"`
-	Status  uint64  `json:"status"`
+	Address string `json:"address"`
+	TxId    string `json:"tx_id"`
+	Index   uint64 `json:"index"`
+	Value   string `json:"value"`
+	Status  uint64 `json:"status"`
 	DbTime
 }

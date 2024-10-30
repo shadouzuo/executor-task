@@ -1,85 +1,45 @@
 package test
 
 import (
+	"context"
 	"time"
 
-	go_best_type "github.com/pefish/go-best-type"
-	"github.com/pkg/errors"
+	i_logger "github.com/pefish/go-interface/i-logger"
 	"github.com/shadouzuo/executor-task/pkg/constant"
 )
 
 type TestType struct {
-	go_best_type.BaseBestType
+	logger i_logger.ILogger
 }
 
-func New(name string) *TestType {
-	t := &TestType{}
-	t.BaseBestType = *go_best_type.NewBaseBestType(t, name)
+func New(logger i_logger.ILogger) *TestType {
+	t := &TestType{
+		logger: logger,
+	}
 	return t
 }
 
-type ActionTypeData struct {
-	Task *constant.Task
-}
-
-func (p *TestType) Start(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
-	task := ask.Data.(ActionTypeData).Task
-
+func (p *TestType) Start(ctx context.Context, task *constant.Task) (any, error) {
 	timer := time.NewTimer(0)
 	for {
 		select {
 		case <-timer.C:
 			err := p.do(task)
 			if err != nil {
-				ask.AnswerChan <- constant.TaskResult{
-					BestType: p,
-					Task:     task,
-					Data:     "",
-					Err:      err,
-				}
-				p.BestTypeManager().ExitSelf(p.Name())
-				return nil
+				return nil, err
 			}
 			if task.Interval != 0 {
 				timer.Reset(time.Duration(task.Interval) * time.Second)
 				continue
 			}
-			ask.AnswerChan <- constant.TaskResult{
-				BestType: p,
-				Task:     task,
-				Data:     "result",
-				Err:      nil,
-			}
-			p.BestTypeManager().ExitSelf(p.Name())
-			return nil
-		case exitType := <-exitChan:
-			switch exitType {
-			case go_best_type.ExitType_System:
-				ask.AnswerChan <- constant.TaskResult{
-					BestType: p,
-					Task:     task,
-					Data:     "",
-					Err:      errors.New("Exited by system."),
-				}
-				return nil
-			case go_best_type.ExitType_User:
-				ask.AnswerChan <- constant.TaskResult{
-					BestType: p,
-					Task:     task,
-					Data:     "",
-					Err:      errors.New("Exited by user."),
-				}
-				return nil
-			}
+			return nil, nil
+		case <-ctx.Done():
+			return nil, nil
 		}
 	}
 }
 
-func (p *TestType) ProcessOtherAsk(exitChan <-chan go_best_type.ExitType, ask *go_best_type.AskType) error {
-	return nil
-}
-
 func (p *TestType) do(task *constant.Task) error {
-	p.Logger().InfoF("<%s> test...", task.Name)
+	p.logger.InfoF("<%s> test...", task.Name)
 	return nil
 }
